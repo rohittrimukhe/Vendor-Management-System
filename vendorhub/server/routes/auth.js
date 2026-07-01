@@ -17,8 +17,13 @@ router.post('/login', async (req, res) => {
     req.session.userId = user.id;
     db.prepare("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?").run(user.id);
 
-    const group = user.group_id ? db.prepare('SELECT name, color FROM groups WHERE id = ?').get(user.group_id) : null;
-    res.json({ data: { id: user.id, name: user.name, username: user.username, email: user.email, group_id: user.group_id, group: group, department: user.department } });
+    const group = user.group_id ? db.prepare('SELECT id, name, color, access_level FROM groups WHERE id = ?').get(user.group_id) : null;
+    const isAdmin = user.group_id === 1;
+
+    // Load permissions for non-admin users
+    const permissions = isAdmin ? [] : db.prepare('SELECT module, access_level FROM permissions WHERE group_id = ?').all(user.group_id || 0);
+
+    res.json({ data: { id: user.id, name: user.name, username: user.username, email: user.email, group_id: user.group_id, group, department: user.department, isAdmin, permissions } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
@@ -36,7 +41,9 @@ router.get('/me', (req, res) => {
   const user = db.prepare('SELECT id, name, email, username, group_id, department, status FROM users WHERE id = ?').get(req.session.userId);
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
   const group = user.group_id ? db.prepare('SELECT id, name, color, access_level FROM groups WHERE id = ?').get(user.group_id) : null;
-  res.json({ data: { ...user, group } });
+  const isAdmin = user.group_id === 1;
+  const permissions = isAdmin ? [] : db.prepare('SELECT module, access_level FROM permissions WHERE group_id = ?').all(user.group_id || 0);
+  res.json({ data: { ...user, group, isAdmin, permissions } });
 });
 
 module.exports = router;

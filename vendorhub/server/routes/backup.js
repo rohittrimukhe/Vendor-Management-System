@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { db } = require('../db');
 const requireAuth = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/permissions');
 const router = express.Router();
 
 router.use(requireAuth);
@@ -39,7 +40,6 @@ function runFullBackup(type) {
   const now = new Date();
   const stamp = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
 
-  // Try to use archiver if available, otherwise fall back to DB-only
   try {
     const archiver = require('archiver');
     const zipFileName = `vendorhub-full-${stamp}.zip`;
@@ -75,7 +75,6 @@ function runFullBackup(type) {
       archive.finalize();
     });
   } catch (e) {
-    // archiver not available, fall back to DB-only
     return Promise.resolve(runDbBackup(type));
   }
 }
@@ -84,12 +83,14 @@ function runBackup(type = 'Manual') {
   return Promise.resolve(runDbBackup(type));
 }
 
+// History - any authenticated user can view
 router.get('/history', (req, res) => {
   const rows = db.prepare('SELECT * FROM backup_log ORDER BY created_at DESC LIMIT 50').all();
   res.json({ data: rows });
 });
 
-router.post('/run', async (req, res) => {
+// Run backup - admin only
+router.post('/run', requireAdmin, async (req, res) => {
   try {
     const { backupType } = req.body;
     let result;
@@ -104,29 +105,40 @@ router.post('/run', async (req, res) => {
   }
 });
 
-router.get('/:id/download', (req, res) => {
+// Download - admin only
+router.get('/:id/download', requireAdmin, (req, res) => {
   const log = db.prepare('SELECT * FROM backup_log WHERE id = ?').get(req.params.id);
   if (!log || !log.file_path) return res.status(404).json({ error: 'Backup not found' });
   if (!fs.existsSync(log.file_path)) return res.status(404).json({ error: 'Backup file not found on disk' });
   res.download(log.file_path);
 });
 
-router.post('/:id/restore', async (req, res) => {
+// Restore - admin only; supports both .db and .zip backups
+router.post('/:id/restore', requireAdmin, async (req, res) => {
   const log = db.prepare('SELECT * FROM backup_log WHERE id = ?').get(req.params.id);
   if (!log || !log.file_path) return res.status(404).json({ error: 'Backup not found' });
   if (!fs.existsSync(log.file_path)) return res.status(404).json({ error: 'Backup file not found on disk' });
-  const srcPath = path.join(dataDir, 'vendorhub.db');
+
+  const destDbPath = path.join(dataDir, 'vendorhub.db');
   try {
-    // First make a safety backup of current state
+    // Safety backup of current state before any restore
     await runDbBackup('Pre-Restore');
-    // Only restore .db files directly; for zip we'd need extraction — for now only allow .db restores
+
     if (log.file_path.endsWith('.db')) {
-      fs.copyFileSync(log.file_path, srcPath);
+      fs.copyFileSync(log.file_path, destDbPath);
+    } else if (log.file_path.endsWith('.zip')) {
+      const AdmZip = require('adm-zip');
+      const zip = new AdmZip(log.file_path);
+      const entry = zip.getEntry('vendorhub.db');
+      if (!entry) return res.status(400).json({ error: 'ZIP backup does not contain vendorhub.db' });
+      const extracted = zip.readFile(entry);
+      fs.writeFileSync(destDbPath, extracted);
     } else {
-      return res.status(400).json({ error: 'Restore from full zip backup not supported via UI. Please restore manually.' });
+      return res.status(400).json({ error: 'Unsupported backup file format' });
     }
-    res.json({ data: { success: true, message: 'Restore complete. Restart server to apply.' } });
-    setTimeout(() => process.exit(0), 1000); // Server will be restarted by process manager
+
+    res.json({ data: { success: true, message: 'Restore complete. Server is restarting...' } });
+    setTimeout(() => process.exit(0), 800);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -137,7 +149,7 @@ router.get('/schedule', (req, res) => {
   res.json({ data: { schedule: row ? row.value : 'Daily' } });
 });
 
-router.post('/schedule', (req, res) => {
+router.post('/schedule', requireAdmin, (req, res) => {
   const { schedule } = req.body;
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('backup_schedule', ?)").run(schedule);
   res.json({ data: { success: true, schedule } });

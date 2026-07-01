@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout.jsx';
 import api from '../api.js';
+import { AuthContext } from '../App.jsx';
 
 const TABS = ['Overview', 'Contacts', 'Documents', 'Contracts & SLA', 'Performance', 'Escalation'];
 
@@ -42,6 +43,7 @@ function Stars({ rating }) {
 export default function VendorDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { can } = useContext(AuthContext);
   const [tab, setTab] = useState(0);
   const [vendor, setVendor] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -205,7 +207,7 @@ export default function VendorDetail() {
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Certifications</div>
-            <button onClick={() => openModal('cert')} style={{ padding: '5px 12px', background: '#EEF5FF', color: '#1C3C6E', border: 'none', borderRadius: 5, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>+ Add</button>
+            {can('Vendors', 'Edit') && <button onClick={() => openModal('cert')} style={{ padding: '5px 12px', background: '#EEF5FF', color: '#1C3C6E', border: 'none', borderRadius: 5, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>+ Add</button>}
           </div>
           {!(vendor.certifications || []).length ? <p style={{ fontSize: 13, color: '#aaa' }}>No certifications added.</p> : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -217,7 +219,7 @@ export default function VendorDetail() {
                     <div style={{ fontSize: 12, color: '#888' }}>{c.issuer} • Expires {c.expiry || 'N/A'}</div>
                   </div>
                   <span style={{ padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 600, background: c.is_valid ? '#F0FFF4' : '#FFF5F5', color: c.is_valid ? '#27AE60' : '#E74C3C' }}>{c.is_valid ? 'Valid' : 'Expired'}</span>
-                  <span onClick={() => api.delete(`/api/vendors/${id}/certifications/${c.id}`).then(loadVendor)} style={{ cursor: 'pointer', color: '#E74C3C', fontSize: 14 }}>✕</span>
+                  {can('Vendors', 'Full') && <span onClick={() => api.delete(`/api/vendors/${id}/certifications/${c.id}`).then(loadVendor)} style={{ cursor: 'pointer', color: '#E74C3C', fontSize: 14 }}>✕</span>}
                 </div>
               ))}
             </div>
@@ -229,9 +231,11 @@ export default function VendorDetail() {
 
   const renderContacts = () => (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-        <button onClick={() => openModal('contact')} style={{ padding: '8px 18px', background: '#1C3C6E', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>+ Add Contact</button>
-      </div>
+      {can('Vendors', 'Edit') && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+          <button onClick={() => openModal('contact')} style={{ padding: '8px 18px', background: '#1C3C6E', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>+ Add Contact</button>
+        </div>
+      )}
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead><tr style={{ background: '#F5F6FA' }}>{['Name', 'Role', 'Email', 'Phone', 'Actions'].map(h => <th key={h} style={{ padding: '11px 14px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#888', textTransform: 'uppercase', borderBottom: '1px solid #E8ECF0' }}>{h}</th>)}</tr></thead>
         <tbody>
@@ -244,8 +248,8 @@ export default function VendorDetail() {
               <td style={{ padding: '12px 14px', fontSize: 13, color: '#555' }}>{c.phone || '—'}</td>
               <td style={{ padding: '12px 14px' }}>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <button onClick={() => openModal('contact', c)} style={{ padding: '4px 10px', background: '#EEF5FF', color: '#1C3C6E', border: 'none', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Edit</button>
-                  <button onClick={() => deleteContact(c.id)} style={{ padding: '4px 10px', background: '#FFF0F0', color: '#E74C3C', border: 'none', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Delete</button>
+                  {can('Vendors', 'Edit') && <button onClick={() => openModal('contact', c)} style={{ padding: '4px 10px', background: '#EEF5FF', color: '#1C3C6E', border: 'none', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Edit</button>}
+                  {can('Vendors', 'Full') && <button onClick={() => deleteContact(c.id)} style={{ padding: '4px 10px', background: '#FFF0F0', color: '#E74C3C', border: 'none', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Delete</button>}
                 </div>
               </td>
             </tr>
@@ -260,9 +264,9 @@ export default function VendorDetail() {
       <div
         onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = '#29ABE2'; }}
         onDragLeave={e => { e.currentTarget.style.borderColor = '#DDE2E8'; }}
-        onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor = '#DDE2E8'; const file = e.dataTransfer.files[0]; if (file) handleFileUpload(file); }}
-        onClick={() => fileInputRef.current?.click()}
-        style={{ border: '2px dashed #DDE2E8', borderRadius: 10, padding: '28px', textAlign: 'center', cursor: 'pointer', marginBottom: 20, background: '#FAFBFC', transition: 'border-color 0.2s' }}
+        onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor = '#DDE2E8'; if (can('Vendors','Edit')) { const file = e.dataTransfer.files[0]; if (file) handleFileUpload(file); } }}
+        onClick={() => can('Vendors','Edit') && fileInputRef.current?.click()}
+        style={{ border: '2px dashed #DDE2E8', borderRadius: 10, padding: '28px', textAlign: 'center', cursor: can('Vendors','Edit') ? 'pointer' : 'default', marginBottom: 20, background: '#FAFBFC', transition: 'border-color 0.2s' }}
       >
         <div style={{ fontSize: 32, marginBottom: 8 }}>📁</div>
         <div style={{ fontSize: 14, color: '#555', fontWeight: 600 }}>Drop files here or click to upload</div>
@@ -280,7 +284,7 @@ export default function VendorDetail() {
               <div style={{ fontSize: 12, color: '#888' }}>{formatSize(d.size)} • {d.type} • {d.uploaded_at?.split('T')[0]}</div>
             </div>
             <a href={`/api/vendors/${id}/documents/${d.id}/download`} style={{ padding: '5px 12px', background: '#EEF5FF', color: '#1C3C6E', border: 'none', borderRadius: 5, fontSize: 12, cursor: 'pointer', fontWeight: 600, textDecoration: 'none' }}>Download</a>
-            <button onClick={() => deleteDocument(d.id)} style={{ padding: '5px 10px', background: '#FFF0F0', color: '#E74C3C', border: 'none', borderRadius: 5, fontSize: 12, cursor: 'pointer' }}>✕</button>
+            {can('Vendors', 'Full') && <button onClick={() => deleteDocument(d.id)} style={{ padding: '5px 10px', background: '#FFF0F0', color: '#E74C3C', border: 'none', borderRadius: 5, fontSize: 12, cursor: 'pointer' }}>✕</button>}
           </div>
         ))}
       </div>
@@ -289,9 +293,11 @@ export default function VendorDetail() {
 
   const renderContracts = () => (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-        <button onClick={() => openModal('contract')} style={{ padding: '8px 18px', background: '#1C3C6E', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>+ Add Contract</button>
-      </div>
+      {can('Vendors', 'Edit') && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+          <button onClick={() => openModal('contract')} style={{ padding: '8px 18px', background: '#1C3C6E', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>+ Add Contract</button>
+        </div>
+      )}
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead><tr style={{ background: '#F5F6FA' }}>{['Type', 'Start', 'End', 'Value', 'SLA', 'Status', 'Actions'].map(h => <th key={h} style={{ padding: '11px 14px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#888', textTransform: 'uppercase', borderBottom: '1px solid #E8ECF0' }}>{h}</th>)}</tr></thead>
         <tbody>
@@ -306,8 +312,8 @@ export default function VendorDetail() {
               <td style={{ padding: '12px 14px' }}><StatusBadge status={c.status} /></td>
               <td style={{ padding: '12px 14px' }}>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <button onClick={() => openModal('contract', c)} style={{ padding: '4px 10px', background: '#EEF5FF', color: '#1C3C6E', border: 'none', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Edit</button>
-                  <button onClick={() => deleteContract(c.id)} style={{ padding: '4px 10px', background: '#FFF0F0', color: '#E74C3C', border: 'none', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Delete</button>
+                  {can('Vendors', 'Edit') && <button onClick={() => openModal('contract', c)} style={{ padding: '4px 10px', background: '#EEF5FF', color: '#1C3C6E', border: 'none', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Edit</button>}
+                  {can('Vendors', 'Full') && <button onClick={() => deleteContract(c.id)} style={{ padding: '4px 10px', background: '#FFF0F0', color: '#E74C3C', border: 'none', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Delete</button>}
                 </div>
               </td>
             </tr>
@@ -322,9 +328,11 @@ export default function VendorDetail() {
     const barStyle = (pct) => ({ height: 10, borderRadius: 5, background: '#29ABE2', width: `${pct || 0}%`, transition: 'width 0.6s ease' });
     return (
       <div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-          <button onClick={() => openModal('review', { rating: 3, on_time_delivery: 80, support_quality: 80, price_competitiveness: 80, notes: '' })} style={{ padding: '8px 18px', background: '#1C3C6E', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>+ Add Review</button>
-        </div>
+        {can('Vendors', 'Edit') && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+            <button onClick={() => openModal('review', { rating: 3, on_time_delivery: 80, support_quality: 80, price_competitiveness: 80, notes: '' })} style={{ padding: '8px 18px', background: '#1C3C6E', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>+ Add Review</button>
+          </div>
+        )}
 
         {performance.reviews.length > 0 && (
           <div style={{ background: '#F8FAFC', borderRadius: 12, padding: '20px 24px', marginBottom: 24 }}>
@@ -366,9 +374,11 @@ export default function VendorDetail() {
 
   const renderEscalation = () => (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-        <button onClick={() => openModal('escalation', { level: `L${escalation.length + 1}`, sort_order: escalation.length })} style={{ padding: '8px 18px', background: '#1C3C6E', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>+ Add Level</button>
-      </div>
+      {can('Vendors', 'Edit') && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+          <button onClick={() => openModal('escalation', { level: `L${escalation.length + 1}`, sort_order: escalation.length })} style={{ padding: '8px 18px', background: '#1C3C6E', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>+ Add Level</button>
+        </div>
+      )}
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead><tr style={{ background: '#F5F6FA' }}>{['Level', 'Name', 'Contact', 'Phone', 'Actions'].map(h => <th key={h} style={{ padding: '11px 14px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#888', textTransform: 'uppercase', borderBottom: '1px solid #E8ECF0' }}>{h}</th>)}</tr></thead>
         <tbody>
@@ -381,8 +391,8 @@ export default function VendorDetail() {
               <td style={{ padding: '12px 14px', fontSize: 13, color: '#555' }}>{e.phone || '—'}</td>
               <td style={{ padding: '12px 14px' }}>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <button onClick={() => openModal('escalation', e)} style={{ padding: '4px 10px', background: '#EEF5FF', color: '#1C3C6E', border: 'none', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Edit</button>
-                  <button onClick={async () => { if (window.confirm('Delete?')) { await api.delete(`/api/vendors/${id}/performance/escalation/${e.id}`); loadEscalation(); } }} style={{ padding: '4px 10px', background: '#FFF0F0', color: '#E74C3C', border: 'none', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Delete</button>
+                  {can('Vendors', 'Edit') && <button onClick={() => openModal('escalation', e)} style={{ padding: '4px 10px', background: '#EEF5FF', color: '#1C3C6E', border: 'none', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Edit</button>}
+                  {can('Vendors', 'Full') && <button onClick={async () => { if (window.confirm('Delete?')) { await api.delete(`/api/vendors/${id}/performance/escalation/${e.id}`); loadEscalation(); } }} style={{ padding: '4px 10px', background: '#FFF0F0', color: '#E74C3C', border: 'none', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>Delete</button>}
                 </div>
               </td>
             </tr>

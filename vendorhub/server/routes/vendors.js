@@ -1,13 +1,14 @@
 const express = require('express');
 const { db } = require('../db');
 const requireAuth = require('../middleware/auth');
+const { requirePermission } = require('../middleware/permissions');
 const router = express.Router();
 
 router.use(requireAuth);
 
 const COLORS = ['#1C3C6E','#29ABE2','#27AE60','#E74C3C','#F39C12','#8E44AD','#16A085','#2C3E50'];
 
-router.get('/', (req, res) => {
+router.get('/', requirePermission('Vendors', 'Read'), (req, res) => {
   try {
     const { q, status, tier, type, domain } = req.query;
     let sql = 'SELECT v.* FROM vendors v';
@@ -44,7 +45,7 @@ router.get('/', (req, res) => {
   }
 });
 
-router.post('/', (req, res) => {
+router.post('/', requirePermission('Vendors', 'Edit'), (req, res) => {
   try {
     const { name, gstin, website, address, geo_scope, empanelment_status, tier, vendor_type, summary, domains = [], tags = [], contacts = [] } = req.body;
     if (!name) return res.status(400).json({ error: 'Vendor name is required' });
@@ -85,7 +86,7 @@ router.post('/', (req, res) => {
   }
 });
 
-router.get('/:id', (req, res) => {
+router.get('/:id', requirePermission('Vendors', 'Read'), (req, res) => {
   try {
     const vendor = db.prepare('SELECT * FROM vendors WHERE id = ?').get(req.params.id);
     if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
@@ -103,7 +104,7 @@ router.get('/:id', (req, res) => {
   }
 });
 
-router.put('/:id', (req, res) => {
+router.put('/:id', requirePermission('Vendors', 'Edit'), (req, res) => {
   try {
     const { name, gstin, website, address, geo_scope, empanelment_status, tier, vendor_type, summary, domains, tags } = req.body;
     const vendor = db.prepare('SELECT * FROM vendors WHERE id = ?').get(req.params.id);
@@ -141,7 +142,7 @@ router.put('/:id', (req, res) => {
   }
 });
 
-router.delete('/:id', (req, res) => {
+router.delete('/:id', requirePermission('Vendors', 'Full'), (req, res) => {
   try {
     const vendor = db.prepare('SELECT id FROM vendors WHERE id = ?').get(req.params.id);
     if (!vendor) return res.status(404).json({ error: 'Vendor not found' });

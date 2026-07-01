@@ -16,10 +16,24 @@ import Help from './pages/Help.jsx';
 
 export const AuthContext = createContext(null);
 
+const LEVELS = ['None', 'Read', 'Edit', 'Full'];
+
+export function useAuth() {
+  return useContext(AuthContext);
+}
+
 function ProtectedRoute({ children }) {
   const { user, loading } = useContext(AuthContext);
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#1C3C6E', fontFamily: 'Montserrat, sans-serif', fontSize: 18 }}>Loading VendorHub...</div>;
   if (!user) return <Navigate to="/login" replace />;
+  return children;
+}
+
+function AdminRoute({ children }) {
+  const { user, loading } = useContext(AuthContext);
+  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#1C3C6E', fontFamily: 'Montserrat, sans-serif', fontSize: 18 }}>Loading VendorHub...</div>;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!user.isAdmin) return <Navigate to="/" replace />;
   return children;
 }
 
@@ -46,8 +60,19 @@ function AppRoutes() {
     );
   }
 
+  // Build a permission checker: isAdmin gets full access to everything
+  function can(module, minLevel = 'Read') {
+    if (!user) return false;
+    if (user.isAdmin) return true;
+    const perm = (user.permissions || []).find(p => p.module === module);
+    const userLevel = perm ? perm.access_level : 'None';
+    return LEVELS.indexOf(userLevel) >= LEVELS.indexOf(minLevel);
+  }
+
+  const authValue = { user, setUser, loading, can, isAdmin: user?.isAdmin || false };
+
   return (
-    <AuthContext.Provider value={{ user, setUser, loading }}>
+    <AuthContext.Provider value={authValue}>
       <Routes>
         <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login onLogin={setUser} />} />
         <Route path="/setup" element={<Navigate to="/" replace />} />
@@ -55,10 +80,10 @@ function AppRoutes() {
         <Route path="/vendors" element={<ProtectedRoute><VendorList /></ProtectedRoute>} />
         <Route path="/vendors/add" element={<ProtectedRoute><AddVendor /></ProtectedRoute>} />
         <Route path="/vendors/:id" element={<ProtectedRoute><VendorDetail /></ProtectedRoute>} />
-        <Route path="/admin/users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
-        <Route path="/admin/groups" element={<ProtectedRoute><Groups /></ProtectedRoute>} />
-        <Route path="/admin/permissions" element={<ProtectedRoute><Permissions /></ProtectedRoute>} />
-        <Route path="/admin/backup" element={<ProtectedRoute><Backup /></ProtectedRoute>} />
+        <Route path="/admin/users" element={<AdminRoute><Users /></AdminRoute>} />
+        <Route path="/admin/groups" element={<AdminRoute><Groups /></AdminRoute>} />
+        <Route path="/admin/permissions" element={<AdminRoute><Permissions /></AdminRoute>} />
+        <Route path="/admin/backup" element={<AdminRoute><Backup /></AdminRoute>} />
         <Route path="/help" element={<ProtectedRoute><Help /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

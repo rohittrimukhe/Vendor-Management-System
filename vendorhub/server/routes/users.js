@@ -2,9 +2,11 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const { db } = require('../db');
 const requireAuth = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/permissions');
 const router = express.Router();
 
 router.use(requireAuth);
+router.use(requireAdmin);
 
 router.get('/', (req, res) => {
   const users = db.prepare(`
@@ -68,6 +70,8 @@ router.post('/:id/reset-password', async (req, res) => {
 });
 
 router.post('/:id/toggle-status', (req, res) => {
+  // Prevent deactivating self
+  if (parseInt(req.params.id) === req.session.userId) return res.status(400).json({ error: 'Cannot deactivate your own account' });
   const user = db.prepare('SELECT status FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   const newStatus = user.status === 'active' ? 'inactive' : 'active';
@@ -76,7 +80,6 @@ router.post('/:id/toggle-status', (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
-  // Prevent self-deletion
   if (parseInt(req.params.id) === req.session.userId) return res.status(400).json({ error: 'Cannot delete your own account' });
   db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
   res.json({ data: { success: true } });
