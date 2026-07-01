@@ -11,6 +11,7 @@ const ADMIN_ITEMS = [
   { path: '/admin/groups', label: 'Groups & Roles', icon: '🛡' },
   { path: '/admin/permissions', label: 'Permissions', icon: '🔑' },
   { path: '/admin/backup', label: 'Backup & Recovery', icon: '🗄' },
+  { path: '/help', label: 'Help & Guide', icon: '❓' },
 ];
 
 export default function Sidebar() {
