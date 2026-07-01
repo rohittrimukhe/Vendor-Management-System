@@ -38,10 +38,12 @@ export default function SetupWizard({ onComplete }) {
     setLoading(true);
     setError('');
     try {
-      await api.post('/api/setup/init', { ...org, ...admin });
+      // Tables are already created when server starts (db.js).
+      // Just verify the server is reachable and mark step done.
+      await api.get('/api/setup/status');
       setDbDone(true);
     } catch (e) {
-      setError(e.message);
+      setError('Could not reach server: ' + e.message);
     } finally {
       setLoading(false);
     }
