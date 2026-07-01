@@ -147,6 +147,26 @@ CREATE TABLE IF NOT EXISTS backup_log (
 );
 `);
 
+// Migrations — safe to run multiple times
+const migrations = [
+  `ALTER TABLE users ADD COLUMN reporting_manager_id INTEGER REFERENCES users(id)`,
+  `CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    username TEXT,
+    action TEXT,
+    entity_type TEXT,
+    entity_id INTEGER,
+    details TEXT,
+    ip_address TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`,
+];
+
+for (const sql of migrations) {
+  try { db.exec(sql); } catch (e) { /* column/table already exists — safe to ignore */ }
+}
+
 function isFirstRun() {
   const row = db.prepare("SELECT value FROM settings WHERE key='initialized'").get();
   return !row;

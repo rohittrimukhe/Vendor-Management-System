@@ -8,7 +8,7 @@ const BLUE = '#29ABE2';
 function Modal({ title, onClose, children }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div style={{ background: '#fff', borderRadius: 12, padding: 32, width: 480, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.18)' }}>
+      <div style={{ background: '#fff', borderRadius: 12, padding: 32, width: 520, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 40px rgba(0,0,0,0.18)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <h2 style={{ fontFamily: 'Montserrat, sans-serif', color: NAVY, fontSize: 20 }}>{title}</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#888' }}>×</button>
@@ -33,7 +33,7 @@ export default function Users() {
   const [showModal, setShowModal] = useState(false);
   const [showPwModal, setShowPwModal] = useState(null);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', email: '', username: '', password: '', group_id: '', department: '' });
+  const [form, setForm] = useState({ name: '', email: '', username: '', password: '', group_id: '', department: '', reporting_manager_id: '' });
   const [newPw, setNewPw] = useState('');
   const [err, setErr] = useState('');
   const [saving, setSaving] = useState(false);
@@ -43,21 +43,21 @@ export default function Users() {
   async function load() {
     setLoading(true);
     const [ud, gd] = await Promise.all([api.get('/api/users'), api.get('/api/groups')]);
-    setUsers(ud.data || []);
-    setGroups(gd.data || []);
+    setUsers(ud || []);
+    setGroups(gd || []);
     setLoading(false);
   }
 
   function openAdd() {
     setEditing(null);
-    setForm({ name: '', email: '', username: '', password: '', group_id: groups[0]?.id || '', department: '' });
+    setForm({ name: '', email: '', username: '', password: '', group_id: groups[0]?.id || '', department: '', reporting_manager_id: '' });
     setErr('');
     setShowModal(true);
   }
 
   function openEdit(u) {
     setEditing(u);
-    setForm({ name: u.name, email: u.email || '', username: u.username, password: '', group_id: u.group_id || '', department: u.department || '' });
+    setForm({ name: u.name, email: u.email || '', username: u.username, password: '', group_id: u.group_id || '', department: u.department || '', reporting_manager_id: u.reporting_manager_id || '' });
     setErr('');
     setShowModal(true);
   }
@@ -68,11 +68,11 @@ export default function Users() {
     setSaving(true);
     try {
       if (editing) {
-        const body = { name: form.name, email: form.email, group_id: form.group_id, department: form.department };
+        const body = { name: form.name, email: form.email, group_id: form.group_id, department: form.department, reporting_manager_id: form.reporting_manager_id || null };
         if (form.password) body.password = form.password;
         await api.put(`/api/users/${editing.id}`, body);
       } else {
-        await api.post('/api/users', form);
+        await api.post('/api/users', { ...form, reporting_manager_id: form.reporting_manager_id || null });
       }
       setShowModal(false);
       load();
@@ -97,6 +97,9 @@ export default function Users() {
 
   const groupMap = {};
   groups.forEach(g => { groupMap[g.id] = g; });
+
+  const userMap = {};
+  users.forEach(u => { userMap[u.id] = u; });
 
   function getInitials(name) {
     return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
@@ -128,7 +131,7 @@ export default function Users() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #f0f0f0' }}>
-                {['User', 'Username', 'Group', 'Department', 'Status', 'Last Login', 'Actions'].map(h => (
+                {['User', 'Username', 'Group', 'Department', 'Reporting Manager', 'Status', 'Last Login', 'Actions'].map(h => (
                   <th key={h} style={{ padding: '14px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#888', fontFamily: 'Open Sans, sans-serif', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
                 ))}
               </tr>
@@ -137,6 +140,7 @@ export default function Users() {
               {users.map((u, i) => {
                 const g = groupMap[u.group_id];
                 const color = avatarColors[i % avatarColors.length];
+                const manager = u.manager_name || (u.reporting_manager_id ? userMap[u.reporting_manager_id]?.name : null);
                 return (
                   <tr key={u.id} style={{ borderBottom: '1px solid #f5f5f5' }}>
                     <td style={{ padding: '14px 16px' }}>
@@ -159,6 +163,7 @@ export default function Users() {
                       ) : <span style={{ color: '#aaa', fontSize: 12 }}>—</span>}
                     </td>
                     <td style={{ padding: '14px 16px', color: '#555', fontSize: 14 }}>{u.department || '—'}</td>
+                    <td style={{ padding: '14px 16px', color: '#555', fontSize: 14 }}>{manager || '—'}</td>
                     <td style={{ padding: '14px 16px' }}>
                       <span style={{
                         background: u.status === 'active' ? '#e6f9f0' : '#fef3f0',
@@ -219,9 +224,18 @@ export default function Users() {
                 {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
               </select>
             </div>
-            <div style={{ gridColumn: '1/-1' }}>
+            <div>
               <label style={labelStyle}>Department</label>
               <input style={inputStyle} value={form.department} onChange={e => setForm({ ...form, department: e.target.value })} placeholder="IT, Finance, Procurement..." />
+            </div>
+            <div style={{ gridColumn: '1/-1' }}>
+              <label style={labelStyle}>Reporting Manager</label>
+              <select style={inputStyle} value={form.reporting_manager_id} onChange={e => setForm({ ...form, reporting_manager_id: e.target.value })}>
+                <option value="">— None —</option>
+                {users.filter(u => !editing || u.id !== editing.id).map(u => (
+                  <option key={u.id} value={u.id}>{u.name} ({u.username})</option>
+                ))}
+              </select>
             </div>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 24 }}>
