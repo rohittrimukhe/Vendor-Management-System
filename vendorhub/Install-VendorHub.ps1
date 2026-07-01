@@ -145,15 +145,11 @@ if ($needNode) {
     OK "Node.js $nodeVer installed successfully"
 }
 
-# Locate npm.cmd explicitly to avoid PowerShell stderr-as-error issue
-$npmPath = (Get-Command npm -ErrorAction SilentlyContinue)?.Source
+# Locate npm (PowerShell 5 compatible - no ?. operator)
+$npmCmd = Get-Command npm -ErrorAction SilentlyContinue
+$npmPath = if ($npmCmd) { $npmCmd.Source } else { $null }
 if (-not $npmPath) {
     $npmPath = (cmd /c "where npm" 2>&1 | Select-Object -First 1).ToString().Trim()
-}
-if (-not $npmPath -or -not (Test-Path $npmPath)) {
-    # fallback - npm is usually beside node
-    $nodeBin = Split-Path (cmd /c "where node" 2>&1 | Select-Object -First 1).ToString().Trim()
-    $npmPath = Join-Path $nodeBin "npm.cmd"
 }
 INFO "Using npm at: $npmPath"
 
