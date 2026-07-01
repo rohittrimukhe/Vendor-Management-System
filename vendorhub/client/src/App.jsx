@@ -12,6 +12,7 @@ import Users from './pages/Users.jsx';
 import Groups from './pages/Groups.jsx';
 import Permissions from './pages/Permissions.jsx';
 import Backup from './pages/Backup.jsx';
+import Help from './pages/Help.jsx';
 
 export const AuthContext = createContext(null);
 
@@ -58,6 +59,7 @@ function AppRoutes() {
         <Route path="/admin/groups" element={<ProtectedRoute><Groups /></ProtectedRoute>} />
         <Route path="/admin/permissions" element={<ProtectedRoute><Permissions /></ProtectedRoute>} />
         <Route path="/admin/backup" element={<ProtectedRoute><Backup /></ProtectedRoute>} />
+        <Route path="/help" element={<ProtectedRoute><Help /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AuthContext.Provider>
