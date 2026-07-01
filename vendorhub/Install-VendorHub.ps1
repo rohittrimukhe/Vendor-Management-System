@@ -1,300 +1,313 @@
-#Requires -RunAsAdministrator
-<#
-.SYNOPSIS
-    VendorHub Installer for Windows 11
-    LRS Services Pvt Ltd
+# VendorHub Installer - LRS Services Pvt Ltd
+# PowerShell 5+ compatible
 
-.DESCRIPTION
-    Automatically installs VendorHub, sets up the Windows service,
-    creates desktop shortcut, and opens the app in your browser.
-#>
+$ErrorActionPreference = "Stop"
+$Port = 8080
+$InstallDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# ─── Config ───────────────────────────────────────────────────────────────────
-$AppName     = "VendorHub"
-$AppVersion  = "1.0.0"
-$NodeVersion = "20"          # LTS version required
-$Port        = 8080
-$InstallDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
-$TaskName    = "VendorHub_AutoStart"
+# ── Helper functions ──────────────────────────────────────────────────────────
 
-# ─── Colors ───────────────────────────────────────────────────────────────────
-function Write-Header {
-    Clear-Host
+function Show-Banner {
     Write-Host ""
-    Write-Host "  ██╗   ██╗███████╗███╗   ██╗██████╗  ██████╗ ██████╗ ██╗  ██╗██╗   ██╗██████╗ " -ForegroundColor Cyan
-    Write-Host "  ██║   ██║██╔════╝████╗  ██║██╔══██╗██╔═══██╗██╔══██╗██║  ██║██║   ██║██╔══██╗" -ForegroundColor Cyan
-    Write-Host "  ██║   ██║█████╗  ██╔██╗ ██║██║  ██║██║   ██║██████╔╝███████║██║   ██║██████╔╝" -ForegroundColor Cyan
-    Write-Host "  ╚██╗ ██╔╝██╔══╝  ██║╚██╗██║██║  ██║██║   ██║██╔══██╗██╔══██║██║   ██║██╔══██╗" -ForegroundColor Cyan
-    Write-Host "   ╚████╔╝ ███████╗██║ ╚████║██████╔╝╚██████╔╝██║  ██║██║  ██║╚██████╔╝██████╔╝" -ForegroundColor Cyan
-    Write-Host "    ╚═══╝  ╚══════╝╚═╝  ╚═══╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝ " -ForegroundColor Cyan
+    Write-Host "  =================================================" -ForegroundColor Cyan
+    Write-Host "   VendorHub v1.0 - Installer" -ForegroundColor Cyan
+    Write-Host "   LRS Services Pvt Ltd" -ForegroundColor Cyan
+    Write-Host "  =================================================" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "  Vendor Management System v$AppVersion — LRS Services Pvt Ltd" -ForegroundColor White
-    Write-Host "  ─────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
+    Write-Host "  Install folder: $InstallDir" -ForegroundColor Gray
     Write-Host ""
 }
 
-function Write-Step($num, $text) {
-    Write-Host "  [$num] $text" -ForegroundColor Yellow
-}
-
-function Write-OK($text) {
-    Write-Host "  ✓  $text" -ForegroundColor Green
-}
-
-function Write-Fail($text) {
-    Write-Host "  ✗  $text" -ForegroundColor Red
-}
-
-function Write-Info($text) {
-    Write-Host "      $text" -ForegroundColor Gray
-}
-
-function Pause-AndExit($msg) {
+function Step($number, $total, $text) {
     Write-Host ""
-    Write-Fail $msg
+    Write-Host "  ─────────────────────────────────────────────────" -ForegroundColor DarkGray
+    Write-Host "  STEP $number of $total : $text" -ForegroundColor Yellow
+    Write-Host "  ─────────────────────────────────────────────────" -ForegroundColor DarkGray
+}
+
+function OK($text)   { Write-Host "  [DONE] $text" -ForegroundColor Green }
+function INFO($text) { Write-Host "  [....] $text" -ForegroundColor Gray }
+function FAIL($text) {
     Write-Host ""
-    Write-Host "  Press any key to exit..." -ForegroundColor DarkGray
-    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    Write-Host "  [FAIL] $text" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  Press Enter to close..."
+    Read-Host
     exit 1
 }
 
-# ─── MAIN ─────────────────────────────────────────────────────────────────────
-Write-Header
+# ── START ─────────────────────────────────────────────────────────────────────
 
-# ── Step 1: Check we are in the right folder ──────────────────────────────────
-Write-Step "1/7" "Checking installation folder..."
+Show-Banner
 
-$serverJs = Join-Path $InstallDir "server\index.js"
-if (-not (Test-Path $serverJs)) {
-    Pause-AndExit "Cannot find server\index.js. Please run this script from inside the 'vendorhub' folder."
+# ── STEP 1: Verify folder ─────────────────────────────────────────────────────
+Step 1 6 "Checking files"
+
+if (-not (Test-Path "$InstallDir\server\index.js")) {
+    FAIL "Cannot find server\index.js. Make sure you extracted the ZIP correctly and are running the installer from inside the 'vendorhub' folder."
 }
-Write-OK "Installation folder: $InstallDir"
+if (-not (Test-Path "$InstallDir\client\package.json")) {
+    FAIL "Cannot find client\package.json. The download may be incomplete."
+}
+OK "All required files found"
 
-# ── Step 2: Check / Install Node.js ───────────────────────────────────────────
-Write-Host ""
-Write-Step "2/7" "Checking Node.js..."
+# ── STEP 2: Check / Install Node.js ──────────────────────────────────────────
+Step 2 6 "Checking Node.js version"
 
-$nodeOk = $false
+$needNodeInstall = $false
+$nodePath = ""
+
 try {
-    $nodeVer = & node --version 2>$null
-    if ($nodeVer -match "v(\d+)\.") {
+    $nodeVer = (& node --version 2>&1).ToString().Trim()
+    if ($nodeVer -match "^v(\d+)\.") {
         $major = [int]$Matches[1]
-        if ($major -eq 20 -or $major -eq 18) {
-            Write-OK "Node.js $nodeVer found — compatible"
-            $nodeOk = $true
-        } elseif ($major -lt 18) {
-            Write-Fail "Node.js $nodeVer is too old. Need version 18 or 20."
+        if ($major -eq 18 -or $major -eq 20 -or $major -eq 22) {
+            OK "Node.js $nodeVer is installed and compatible"
         } else {
-            Write-Fail "Node.js $nodeVer is too new. Need version 20 LTS."
+            INFO "Node.js $nodeVer found but wrong version (need v18, v20 or v22)"
+            $needNodeInstall = $true
         }
+    } else {
+        INFO "Could not detect Node.js version"
+        $needNodeInstall = $true
     }
 } catch {
-    Write-Info "Node.js not found."
+    INFO "Node.js not found on this computer"
+    $needNodeInstall = $true
 }
 
-if (-not $nodeOk) {
+if ($needNodeInstall) {
     Write-Host ""
-    Write-Host "  → Downloading Node.js 20 LTS (this may take a minute)..." -ForegroundColor Yellow
+    INFO "Downloading Node.js 20 LTS from nodejs.org..."
+    INFO "This file is about 30 MB - please wait..."
+    Write-Host ""
 
-    $nodeUrl  = "https://nodejs.org/dist/v20.19.2/node-v20.19.2-x64.msi"
-    $nodeMsi  = "$env:TEMP\node-v20-lts.msi"
+    $nodeUrl = "https://nodejs.org/dist/v20.19.2/node-v20.19.2-x64.msi"
+    $nodeMsi = "$env:TEMP\node-v20-lts.msi"
 
     try {
-        Write-Info "Downloading from nodejs.org..."
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        $ProgressPreference = 'SilentlyContinue'
+        $ProgressPreference = "SilentlyContinue"
         Invoke-WebRequest -Uri $nodeUrl -OutFile $nodeMsi -UseBasicParsing
-        Write-Info "Installing Node.js silently..."
-        Start-Process msiexec.exe -ArgumentList "/i `"$nodeMsi`" /quiet /norestart ADDLOCAL=ALL" -Wait -NoNewWindow
+        OK "Download complete"
 
-        # Refresh PATH
+        INFO "Installing Node.js silently (this takes about 1 minute)..."
+        $proc = Start-Process "msiexec.exe" -ArgumentList "/i `"$nodeMsi`" /quiet /norestart" -Wait -PassThru -NoNewWindow
+        if ($proc.ExitCode -ne 0) {
+            FAIL "Node.js installer returned error code $($proc.ExitCode). Try installing Node.js 20 manually from https://nodejs.org then run this installer again."
+        }
+
+        # Refresh environment PATH so node command works in this session
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 
-        $nodeVer = & node --version 2>$null
-        Write-OK "Node.js $nodeVer installed successfully"
+        $nodeVer = (& node --version 2>&1).ToString().Trim()
+        OK "Node.js $nodeVer installed successfully"
     } catch {
-        Pause-AndExit "Failed to download/install Node.js automatically. Please install Node.js 20 LTS manually from https://nodejs.org and re-run this installer."
+        FAIL "Could not download Node.js automatically. Please install Node.js 20 LTS manually from https://nodejs.org/en/download then run this installer again."
     }
 }
 
-# ── Step 3: Install server dependencies ───────────────────────────────────────
+# ── STEP 3: Install server packages ──────────────────────────────────────────
+Step 3 6 "Installing server packages"
+INFO "This step takes 2-4 minutes - please wait..."
 Write-Host ""
-Write-Step "3/7" "Installing server packages (this takes 2-3 minutes)..."
 
 Set-Location $InstallDir
 
-# Remove broken node_modules if present
 if (Test-Path "node_modules") {
-    Write-Info "Removing old node_modules..."
+    INFO "Removing old packages..."
     Remove-Item -Recurse -Force "node_modules" -ErrorAction SilentlyContinue
 }
 
-$npmOut = & npm install 2>&1
+INFO "Running npm install..."
+$out = & npm install 2>&1
 if ($LASTEXITCODE -ne 0) {
-    Write-Host $npmOut
-    Pause-AndExit "npm install failed. See error above."
+    Write-Host ($out | Out-String) -ForegroundColor Red
+    FAIL "Server package installation failed. See error above."
 }
-Write-OK "Server packages installed"
+OK "Server packages installed"
 
-# ── Step 4: Build the React frontend ──────────────────────────────────────────
+# ── STEP 4: Build web interface ───────────────────────────────────────────────
+Step 4 6 "Building web interface"
+INFO "This step takes 1-2 minutes - please wait..."
 Write-Host ""
-Write-Step "4/7" "Building the web interface..."
 
-Set-Location (Join-Path $InstallDir "client")
+Set-Location "$InstallDir\client"
 
 if (Test-Path "node_modules") {
+    INFO "Removing old client packages..."
     Remove-Item -Recurse -Force "node_modules" -ErrorAction SilentlyContinue
 }
 
-$npmOut = & npm install 2>&1
+INFO "Running npm install for client..."
+$out = & npm install 2>&1
 if ($LASTEXITCODE -ne 0) {
-    Write-Host $npmOut
-    Pause-AndExit "Client npm install failed."
+    Write-Host ($out | Out-String) -ForegroundColor Red
+    FAIL "Client package installation failed."
 }
 
-$buildOut = & npm run build 2>&1
+INFO "Building web interface..."
+$out = & npm run build 2>&1
 if ($LASTEXITCODE -ne 0) {
-    Write-Host $buildOut
-    Pause-AndExit "Client build failed."
+    Write-Host ($out | Out-String) -ForegroundColor Red
+    FAIL "Web interface build failed."
 }
-Write-OK "Web interface built successfully"
+OK "Web interface built successfully"
 
 Set-Location $InstallDir
 
-# ── Step 5: Create Start / Stop scripts ───────────────────────────────────────
-Write-Host ""
-Write-Step "5/7" "Creating start/stop scripts..."
+# ── STEP 5: Create start/stop scripts ────────────────────────────────────────
+Step 5 6 "Creating shortcuts and startup scripts"
 
-# Start script
-$startContent = @"
+# Start VendorHub batch file
+$startBat = "$InstallDir\Start-VendorHub.bat"
+Set-Content -Path $startBat -Encoding ASCII -Value @"
 @echo off
-title VendorHub - LRS Services Pvt Ltd
+title VendorHub Server - LRS Services Pvt Ltd
+color 1F
 echo.
-echo  Starting VendorHub on http://localhost:$Port
-echo  Close this window to stop the server.
+echo  VendorHub is starting...
+echo  Once you see "Server running" open your browser to:
+echo.
+echo      http://localhost:$Port
+echo.
+echo  DO NOT CLOSE THIS WINDOW while using VendorHub.
+echo  To stop: close this window.
 echo.
 cd /d "$InstallDir"
 node server\index.js
-pause
+echo.
+echo Server stopped. Press any key to close.
+pause > nul
 "@
-Set-Content -Path (Join-Path $InstallDir "Start-VendorHub.bat") -Value $startContent -Encoding ASCII
 
-# Stop script
-$stopContent = @"
+# Stop VendorHub batch file
+$stopBat = "$InstallDir\Stop-VendorHub.bat"
+Set-Content -Path $stopBat -Encoding ASCII -Value @"
 @echo off
 echo Stopping VendorHub...
-taskkill /F /FI "WINDOWTITLE eq VendorHub*" /T >nul 2>&1
-taskkill /F /IM "node.exe" /FI "CommandLine eq *vendorhub*server*" >nul 2>&1
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":$Port " ^| findstr LISTENING') do (
+    taskkill /F /PID %%a >nul 2>&1
+)
 echo VendorHub stopped.
 timeout /t 2 >nul
 "@
-Set-Content -Path (Join-Path $InstallDir "Stop-VendorHub.bat") -Value $stopContent -Encoding ASCII
 
-Write-OK "Start-VendorHub.bat and Stop-VendorHub.bat created"
+OK "Start-VendorHub.bat created"
 
-# ── Step 6: Create Desktop Shortcut ───────────────────────────────────────────
+# Desktop shortcuts
+$desktop = [System.Environment]::GetFolderPath("Desktop")
+$WshShell = New-Object -ComObject WScript.Shell
+
+# Shortcut 1: Open app in browser
+$sc1 = $WshShell.CreateShortcut("$desktop\VendorHub.lnk")
+$sc1.TargetPath   = "http://localhost:$Port"
+$sc1.Description  = "Open VendorHub in browser"
+$sc1.Save()
+
+# Shortcut 2: Start the server
+$sc2 = $WshShell.CreateShortcut("$desktop\Start VendorHub Server.lnk")
+$sc2.TargetPath   = $startBat
+$sc2.Description  = "Start VendorHub server"
+$sc2.WindowStyle  = 1
+$sc2.Save()
+
+OK "Desktop shortcuts created"
+
+# ── STEP 6: Auto-start with Windows ──────────────────────────────────────────
+Step 6 6 "Setting up auto-start with Windows"
+
+$taskName = "VendorHub_AutoStart"
+
+# Remove existing task if any
+Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+
+try {
+    $action   = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$startBat`"" -WorkingDirectory $InstallDir
+    $trigger  = New-ScheduledTaskTrigger -AtLogOn
+    $settings = New-ScheduledTaskSettingsSet `
+        -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries `
+        -StartWhenAvailable `
+        -ExecutionTimeLimit (New-TimeSpan -Hours 0)
+    $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
+
+    Register-ScheduledTask `
+        -TaskName $taskName `
+        -Action $action `
+        -Trigger $trigger `
+        -Settings $settings `
+        -Principal $principal `
+        -Description "Auto-start VendorHub on Windows login" `
+        -Force | Out-Null
+
+    OK "Auto-start configured - VendorHub will start every time you log in"
+} catch {
+    Write-Host "  [WARN] Could not set up auto-start: $_" -ForegroundColor DarkYellow
+    Write-Host "         You can still start manually using Start-VendorHub.bat" -ForegroundColor DarkYellow
+}
+
+# ── DONE ─────────────────────────────────────────────────────────────────────
+
 Write-Host ""
-Write-Step "6/7" "Creating desktop shortcut..."
-
-$WshShell  = New-Object -comObject WScript.Shell
-$desktopPath = [System.Environment]::GetFolderPath("Desktop")
-
-# App shortcut (opens browser)
-$shortcut       = $WshShell.CreateShortcut("$desktopPath\VendorHub.lnk")
-$shortcut.TargetPath      = "http://localhost:$Port"
-$shortcut.Description     = "VendorHub - Vendor Management System"
-$shortcut.Save()
-
-# Start Server shortcut
-$startShortcut  = $WshShell.CreateShortcut("$desktopPath\Start VendorHub Server.lnk")
-$startShortcut.TargetPath = Join-Path $InstallDir "Start-VendorHub.bat"
-$startShortcut.Description = "Start the VendorHub server"
-$startShortcut.WindowStyle = 1
-$startShortcut.Save()
-
-Write-OK "Desktop shortcuts created"
-
-# ── Step 7: Auto-start with Windows (Task Scheduler) ─────────────────────────
+Write-Host "  =================================================" -ForegroundColor Green
+Write-Host "   INSTALLATION COMPLETE!" -ForegroundColor Green
+Write-Host "  =================================================" -ForegroundColor Green
 Write-Host ""
-Write-Step "7/7" "Setting up auto-start with Windows..."
-
-# Remove old task if exists
-Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
-
-$startBat = Join-Path $InstallDir "Start-VendorHub.bat"
-
-$action  = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$startBat`"" -WorkingDirectory $InstallDir
-$trigger = New-ScheduledTaskTrigger -AtLogOn
-$settings = New-ScheduledTaskSettingsSet `
-    -AllowStartIfOnBatteries `
-    -DontStopIfGoingOnBatteries `
-    -StartWhenAvailable `
-    -ExecutionTimeLimit (New-TimeSpan -Hours 0)  # No time limit
-
-$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
-
-Register-ScheduledTask `
-    -TaskName $TaskName `
-    -Action $action `
-    -Trigger $trigger `
-    -Settings $settings `
-    -Principal $principal `
-    -Description "Auto-start VendorHub on login" `
-    -Force | Out-Null
-
-Write-OK "VendorHub will now start automatically when you log in to Windows"
-
-# ── Done! ─────────────────────────────────────────────────────────────────────
+Write-Host "  What was installed:" -ForegroundColor White
+Write-Host "   * VendorHub app files in: $InstallDir" -ForegroundColor Gray
+Write-Host "   * Desktop shortcut: 'Start VendorHub Server'" -ForegroundColor Gray
+Write-Host "   * Desktop shortcut: 'VendorHub' (opens browser)" -ForegroundColor Gray
+Write-Host "   * Auto-start on Windows login: ON" -ForegroundColor Gray
 Write-Host ""
-Write-Host "  ─────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
-Write-Host ""
-Write-Host "  🎉  Installation Complete!" -ForegroundColor Green
-Write-Host ""
-Write-Host "  What was set up:" -ForegroundColor White
-Write-Host "    ✓  VendorHub installed in: $InstallDir" -ForegroundColor Green
-Write-Host "    ✓  Desktop shortcut: 'VendorHub' and 'Start VendorHub Server'" -ForegroundColor Green
-Write-Host "    ✓  Auto-starts when you log in to Windows" -ForegroundColor Green
-Write-Host ""
-Write-Host "  HOW TO USE:" -ForegroundColor White
-Write-Host "    1. Double-click 'Start VendorHub Server' on your Desktop" -ForegroundColor Cyan
-Write-Host "    2. Wait for the black window to say 'Server running on port $Port'" -ForegroundColor Cyan
-Write-Host "    3. Double-click 'VendorHub' on your Desktop — browser opens automatically" -ForegroundColor Cyan
-Write-Host "    4. First time: complete the Setup Wizard (takes 2 minutes)" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "  ─────────────────────────────────────────────────────────────" -ForegroundColor DarkGray
+Write-Host "  HOW TO USE EVERY DAY:" -ForegroundColor Yellow
+Write-Host "   1. Double-click 'Start VendorHub Server' on Desktop" -ForegroundColor White
+Write-Host "   2. Wait for: 'Server running on http://localhost:$Port'" -ForegroundColor White
+Write-Host "   3. Double-click 'VendorHub' on Desktop" -ForegroundColor White
+Write-Host "   4. First time only: fill in the Setup Wizard" -ForegroundColor White
 Write-Host ""
 
-# Ask to launch now
-$launch = Read-Host "  Start VendorHub now and open in browser? (Y/N)"
-if ($launch -match "^[Yy]") {
+# Ask to start now
+Write-Host "  ─────────────────────────────────────────────────" -ForegroundColor DarkGray
+Write-Host ""
+$answer = Read-Host "  Do you want to START VendorHub right now? (type Y and press Enter)"
+
+if ($answer -match "^[Yy]") {
     Write-Host ""
-    Write-Info "Starting server..."
-    Start-Process "cmd.exe" -ArgumentList "/c `"$startBat`"" -WorkingDirectory $InstallDir
+    INFO "Starting VendorHub server..."
 
-    Write-Info "Waiting for server to be ready..."
+    Start-Process "cmd.exe" -ArgumentList "/c `"$startBat`""
+
+    INFO "Waiting for server to be ready..."
     $ready = $false
-    for ($i = 0; $i -lt 20; $i++) {
+    for ($i = 1; $i -le 30; $i++) {
         Start-Sleep -Seconds 1
+        Write-Host "  Checking... ($i/30)" -ForegroundColor DarkGray -NoNewline
+        Write-Host "`r" -NoNewline
         try {
-            $resp = Invoke-WebRequest -Uri "http://localhost:$Port/api/setup/status" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
-            if ($resp.StatusCode -eq 200) { $ready = $true; break }
+            $r = Invoke-WebRequest -Uri "http://localhost:$Port/api/setup/status" -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop
+            if ($r.StatusCode -eq 200) { $ready = $true; break }
         } catch {}
-        Write-Host "." -NoNewline -ForegroundColor Gray
     }
-    Write-Host ""
+
+    Write-Host "                              `r" -NoNewline
 
     if ($ready) {
-        Write-OK "Server is running!"
+        OK "Server is running!"
+        Write-Host ""
+        INFO "Opening VendorHub in your browser..."
+        Start-Sleep -Milliseconds 500
         Start-Process "http://localhost:$Port"
         Write-Host ""
-        Write-Host "  Browser opened to http://localhost:$Port" -ForegroundColor Green
-        Write-Host "  Complete the Setup Wizard to get started." -ForegroundColor White
+        Write-Host "  Browser is opening. Complete the Setup Wizard to get started!" -ForegroundColor Green
     } else {
-        Write-Info "Server is starting. Please wait 10 seconds then open:"
+        Write-Host ""
+        Write-Host "  Server is starting up. Please open your browser and go to:" -ForegroundColor Yellow
         Write-Host "  http://localhost:$Port" -ForegroundColor Cyan
     }
 }
 
 Write-Host ""
-Write-Host "  Press any key to close this installer..." -ForegroundColor DarkGray
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+Write-Host "  ─────────────────────────────────────────────────" -ForegroundColor DarkGray
+Write-Host "  Press Enter to close this installer..." -ForegroundColor DarkGray
+Read-Host

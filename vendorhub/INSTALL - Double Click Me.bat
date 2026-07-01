@@ -1,36 +1,40 @@
 @echo off
-:: VendorHub Installer Launcher
-:: LRS Services Pvt Ltd
-:: Double-click this file to install VendorHub
-
-title VendorHub Installer
+title VendorHub Installer - LRS Services Pvt Ltd
+color 1F
 
 echo.
 echo  ============================================
 echo   VendorHub Installer - LRS Services Pvt Ltd
 echo  ============================================
 echo.
-echo  This will install VendorHub on your computer.
-echo  Please wait...
-echo.
 
-:: Check if running as admin, if not re-launch as admin
+:: ── Check Admin ──────────────────────────────────────────────────────────────
 net session >nul 2>&1
 if %errorLevel% neq 0 (
-    echo  Requesting Administrator access...
-    echo  (Click YES on the popup that appears)
+    echo  ERROR: This installer needs Administrator rights.
     echo.
-    powershell -Command "Start-Process cmd -ArgumentList '/c \"%~f0\"' -Verb RunAs"
-    exit /b
-)
-
-:: Run the PowerShell installer with execution policy bypass
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Install-VendorHub.ps1"
-
-if %errorLevel% neq 0 (
-    echo.
-    echo  Installation encountered an error.
-    echo  Please take a screenshot and contact IT support.
+    echo  Please close this window and try again:
+    echo    1. Right-click on "INSTALL - Double Click Me.bat"
+    echo    2. Select "Run as administrator"
+    echo    3. Click YES on the popup
     echo.
     pause
+    exit /b 1
 )
+
+echo  [OK] Running as Administrator
+echo.
+echo  Starting installation...
+echo  (A blue PowerShell window will open - do not close it)
+echo.
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Install-VendorHub.ps1"
+
+echo.
+if %errorLevel% neq 0 (
+    echo  Something went wrong. Please share the error above with IT support.
+) else (
+    echo  Done! You can close this window.
+)
+echo.
+pause
