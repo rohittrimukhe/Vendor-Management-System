@@ -39,7 +39,7 @@ export default function Permissions() {
   async function load() {
     setLoading(true);
     const [gd, pd] = await Promise.all([api.get('/api/groups'), api.get('/api/permissions')]);
-    const gs = gd.data || [];
+    const gs = gd || [];
     setGroups(gs);
 
     // Build matrix from permissions
@@ -48,7 +48,7 @@ export default function Permissions() {
       m[g.id] = {};
       MODULES.forEach(mod => { m[g.id][mod] = 'Read'; }); // default
     });
-    (pd.data || []).forEach(p => {
+    (pd || []).forEach(p => {
       if (m[p.group_id]) m[p.group_id][p.module] = p.access_level;
     });
     setMatrix(m);
@@ -68,9 +68,10 @@ export default function Permissions() {
   async function saveAll() {
     setSaving(true);
     try {
-      // Build array of all permissions
+      // Build array of all permissions, skip System Administrator (id=1, index=0)
       const perms = [];
       Object.entries(matrix).forEach(([groupId, mods]) => {
+        if (Number(groupId) === groups[0]?.id) return; // skip System Admin
         Object.entries(mods).forEach(([module, access_level]) => {
           perms.push({ group_id: Number(groupId), module, access_level });
         });
@@ -88,9 +89,11 @@ export default function Permissions() {
     return <Layout title="Permissions"><div style={{ padding: 60, textAlign: 'center', color: '#aaa' }}>Loading permissions...</div></Layout>;
   }
 
+  const sysAdminGroup = groups[0];
+
   return (
     <Layout title="Permission Matrix">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div>
           <h1 style={{ fontFamily: 'Montserrat, sans-serif', color: NAVY, fontSize: 22, fontWeight: 700 }}>Permission Matrix</h1>
           <p style={{ color: '#888', fontSize: 14, marginTop: 2 }}>Click a cell to cycle through Full → Read → None</p>
@@ -98,6 +101,10 @@ export default function Permissions() {
         <button onClick={saveAll} disabled={saving} style={{ background: saving ? '#aaa' : BLUE, color: '#fff', border: 'none', borderRadius: 8, padding: '10px 24px', fontFamily: 'Montserrat, sans-serif', fontWeight: 600, cursor: 'pointer' }}>
           {saving ? 'Saving...' : saved ? '✓ Saved!' : 'Save Permissions'}
         </button>
+      </div>
+
+      <div style={{ background: '#fff3cd', border: '1px solid #ffc107', color: '#856404', padding: '10px 16px', borderRadius: 8, marginBottom: 16, fontSize: 13, fontWeight: 500 }}>
+        🔒 System Administrator group always has Full access to all modules and cannot be changed.
       </div>
 
       {saved && (
@@ -120,6 +127,7 @@ export default function Permissions() {
                       {g.name.slice(0, 2).toUpperCase()}
                     </div>
                     <span style={{ fontSize: 11 }}>{g.name}</span>
+                    {g.id === sysAdminGroup?.id && <span style={{ fontSize: 9, opacity: 0.8 }}>🔒 Locked</span>}
                   </div>
                 </th>
               ))}
@@ -132,8 +140,30 @@ export default function Permissions() {
                   {mod}
                 </td>
                 {groups.map(g => {
-                  const level = matrix[g.id]?.[mod] || 'Read';
+                  const isSysAdmin = g.id === sysAdminGroup?.id;
+                  const level = isSysAdmin ? 'Full' : (matrix[g.id]?.[mod] || 'Read');
                   const s = accessStyle[level];
+                  if (isSysAdmin) {
+                    return (
+                      <td key={g.id} style={{ padding: '12px 16px', textAlign: 'center', background: '#f5f5f5' }}>
+                        <span style={{
+                          ...accessStyle.Full,
+                          borderRadius: 20,
+                          padding: '4px 14px',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          fontFamily: 'Open Sans, sans-serif',
+                          minWidth: 60,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          opacity: 0.85,
+                        }}>
+                          🔒 Full
+                        </span>
+                      </td>
+                    );
+                  }
                   return (
                     <td key={g.id} style={{ padding: '12px 16px', textAlign: 'center' }}>
                       <button

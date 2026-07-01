@@ -5,6 +5,8 @@ import api from '../api.js';
 const NAVY = '#1C3C6E';
 const BLUE = '#29ABE2';
 
+const inputStyle = { padding: '8px 12px', border: '1px solid #ddd', borderRadius: 6, fontSize: 13, outline: 'none', background: '#fff' };
+
 export default function Backup() {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -14,13 +16,21 @@ export default function Backup() {
   const [msg, setMsg] = useState(null);
   const [restoreConfirm, setRestoreConfirm] = useState(null);
 
+  // Backup type
+  const [backupType, setBackupType] = useState('full');
+
+  // Schedule time pickers
+  const [schedHour, setSchedHour] = useState(2);
+  const [schedMinute, setSchedMinute] = useState(0);
+  const [schedDay, setSchedDay] = useState(1); // day of week (0=Sun) for weekly, day of month for monthly
+
   useEffect(() => { load(); loadSchedule(); }, []);
 
   async function load() {
     setLoading(true);
     try {
       const d = await api.get('/api/backup/history');
-      setHistory(d.data || []);
+      setHistory(d || []);
     } catch {}
     setLoading(false);
   }
@@ -28,8 +38,16 @@ export default function Backup() {
   async function loadSchedule() {
     try {
       const d = await api.get('/api/settings');
-      const s = (d.data || []).find(x => x.key === 'backup_schedule');
+      const s = (d || []).find(x => x.key === 'backup_schedule');
       if (s) setSchedule(s.value);
+      const sh = (d || []).find(x => x.key === 'backup_schedule_hour');
+      if (sh) setSchedHour(Number(sh.value));
+      const sm = (d || []).find(x => x.key === 'backup_schedule_minute');
+      if (sm) setSchedMinute(Number(sm.value));
+      const sd = (d || []).find(x => x.key === 'backup_schedule_day');
+      if (sd) setSchedDay(Number(sd.value));
+      const bt = (d || []).find(x => x.key === 'backup_type');
+      if (bt) setBackupType(bt.value);
     } catch {}
   }
 
@@ -37,8 +55,8 @@ export default function Backup() {
     setRunning(true);
     setMsg(null);
     try {
-      const d = await api.post('/api/backup/run', {});
-      setMsg({ type: 'success', text: `Backup created: ${d.data?.file || 'done'}` });
+      const d = await api.post('/api/backup/run', { backupType });
+      setMsg({ type: 'success', text: `Backup created: ${d?.file || 'done'}` });
       load();
     } catch (e) {
       setMsg({ type: 'error', text: e.message || 'Backup failed' });
@@ -48,10 +66,20 @@ export default function Backup() {
 
   async function saveSchedule() {
     setSavingSchedule(true);
-    await api.put('/api/settings', { key: 'backup_schedule', value: schedule });
+    try {
+      await Promise.all([
+        api.put('/api/settings', { key: 'backup_schedule', value: schedule }),
+        api.put('/api/settings', { key: 'backup_schedule_hour', value: String(schedHour) }),
+        api.put('/api/settings', { key: 'backup_schedule_minute', value: String(schedMinute) }),
+        api.put('/api/settings', { key: 'backup_schedule_day', value: String(schedDay) }),
+        api.put('/api/settings', { key: 'backup_type', value: backupType }),
+      ]);
+      setMsg({ type: 'success', text: 'Backup schedule saved' });
+      setTimeout(() => setMsg(null), 3000);
+    } catch (e) {
+      setMsg({ type: 'error', text: 'Failed to save schedule: ' + e.message });
+    }
     setSavingSchedule(false);
-    setMsg({ type: 'success', text: 'Backup schedule saved' });
-    setTimeout(() => setMsg(null), 3000);
   }
 
   async function doRestore(b) {
@@ -75,6 +103,8 @@ export default function Backup() {
     return new Date(d).toLocaleString();
   }
 
+  const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
   return (
     <Layout title="Backup & Recovery">
       <h1 style={{ fontFamily: 'Montserrat, sans-serif', color: NAVY, fontSize: 22, fontWeight: 700, marginBottom: 24 }}>Backup & Recovery</h1>
@@ -95,9 +125,19 @@ export default function Backup() {
               <p style={{ color: '#888', fontSize: 13 }}>Create an immediate backup now</p>
             </div>
           </div>
-          <p style={{ color: '#666', fontSize: 14, marginBottom: 20 }}>
-            Backs up the entire SQLite database to the <code style={{ background: '#f5f5f5', padding: '2px 6px', borderRadius: 4, fontSize: 12 }}>backups/</code> directory with a timestamp filename.
-          </p>
+
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#555', marginBottom: 8 }}>Backup Type</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, cursor: 'pointer' }}>
+              <input type="radio" name="backupType" value="full" checked={backupType === 'full'} onChange={() => setBackupType('full')} />
+              <span style={{ fontSize: 14, color: '#444' }}>Full Backup (DB + Files)</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+              <input type="radio" name="backupType" value="db" checked={backupType === 'db'} onChange={() => setBackupType('db')} />
+              <span style={{ fontSize: 14, color: '#444' }}>DB Only (Fast)</span>
+            </label>
+          </div>
+
           <button
             onClick={runBackup}
             disabled={running}
@@ -116,21 +156,62 @@ export default function Backup() {
               <p style={{ color: '#888', fontSize: 13 }}>Automatic backup frequency</p>
             </div>
           </div>
-          <div style={{ marginBottom: 20 }}>
+          <div style={{ marginBottom: 16 }}>
             <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#555', marginBottom: 8 }}>Frequency</label>
             {['Daily', 'Weekly', 'Monthly'].map(opt => (
               <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, cursor: 'pointer' }}>
                 <input type="radio" name="schedule" value={opt} checked={schedule === opt} onChange={() => setSchedule(opt)} />
-                <span style={{ fontSize: 14, color: '#444' }}>
-                  {opt} {opt === 'Daily' ? '(runs at 2:00 AM)' : opt === 'Weekly' ? '(runs Sunday at 2:00 AM)' : '(runs 1st of month)'}
-                </span>
+                <span style={{ fontSize: 14, color: '#444' }}>{opt}</span>
               </label>
             ))}
           </div>
+
+          {/* Time picker */}
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#555', marginBottom: 8 }}>Time</label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <select style={inputStyle} value={schedHour} onChange={e => setSchedHour(Number(e.target.value))}>
+                {Array.from({ length: 24 }, (_, i) => (
+                  <option key={i} value={i}>{String(i).padStart(2, '0')}</option>
+                ))}
+              </select>
+              <span style={{ fontWeight: 700, color: '#888' }}>:</span>
+              <select style={inputStyle} value={schedMinute} onChange={e => setSchedMinute(Number(e.target.value))}>
+                {[0, 15, 30, 45].map(m => (
+                  <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Day of week for Weekly */}
+          {schedule === 'Weekly' && (
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#555', marginBottom: 8 }}>Day of Week</label>
+              <select style={{ ...inputStyle, width: '100%' }} value={schedDay} onChange={e => setSchedDay(Number(e.target.value))}>
+                {DAYS_OF_WEEK.map((d, i) => (
+                  <option key={i} value={i}>{d}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Day of month for Monthly */}
+          {schedule === 'Monthly' && (
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#555', marginBottom: 8 }}>Day of Month</label>
+              <select style={{ ...inputStyle, width: '100%' }} value={schedDay} onChange={e => setSchedDay(Number(e.target.value))}>
+                {Array.from({ length: 28 }, (_, i) => (
+                  <option key={i + 1} value={i + 1}>{i + 1}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <button
             onClick={saveSchedule}
             disabled={savingSchedule}
-            style={{ background: BLUE, color: '#fff', border: 'none', borderRadius: 8, padding: '12px 24px', fontFamily: 'Montserrat, sans-serif', fontWeight: 600, fontSize: 14, cursor: 'pointer', width: '100%' }}
+            style={{ background: BLUE, color: '#fff', border: 'none', borderRadius: 8, padding: '12px 24px', fontFamily: 'Montserrat, sans-serif', fontWeight: 600, fontSize: 14, cursor: 'pointer', width: '100%', marginTop: 8 }}
           >
             {savingSchedule ? 'Saving...' : 'Save Schedule'}
           </button>
@@ -164,7 +245,7 @@ export default function Backup() {
                 <tr key={b.id} style={{ borderBottom: '1px solid #f5f5f5' }}>
                   <td style={{ padding: '14px 16px', fontSize: 14, color: '#333' }}>{formatDate(b.date || b.created_at)}</td>
                   <td style={{ padding: '14px 16px' }}>
-                    <span style={{ background: b.type === 'Scheduled' ? BLUE + '20' : NAVY + '15', color: b.type === 'Scheduled' ? BLUE : NAVY, borderRadius: 20, padding: '3px 10px', fontSize: 12, fontWeight: 600 }}>
+                    <span style={{ background: b.type?.includes('Scheduled') ? BLUE + '20' : NAVY + '15', color: b.type?.includes('Scheduled') ? BLUE : NAVY, borderRadius: 20, padding: '3px 10px', fontSize: 12, fontWeight: 600 }}>
                       {b.type || 'Manual'}
                     </span>
                   </td>

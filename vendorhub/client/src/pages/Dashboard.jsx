@@ -3,9 +3,24 @@ import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout.jsx';
 import api from '../api.js';
 
-function KpiCard({ label, value, color, icon }) {
+function KpiCard({ label, value, color, icon, onClick }) {
+  const [hovered, setHovered] = useState(false);
   return (
-    <div style={{ background: '#fff', borderRadius: 12, padding: '20px 24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', flex: 1 }}>
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        background: '#fff',
+        borderRadius: 12,
+        padding: '20px 24px',
+        boxShadow: hovered && onClick ? '0 4px 16px rgba(0,0,0,0.12)' : '0 2px 8px rgba(0,0,0,0.06)',
+        flex: 1,
+        cursor: onClick ? 'pointer' : 'default',
+        border: hovered && onClick ? `2px solid ${color}40` : '2px solid transparent',
+        transition: 'all 0.18s',
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <span style={{ fontSize: 13, color: '#888', fontWeight: 500 }}>{label}</span>
         <span style={{ fontSize: 22, background: color + '18', padding: '6px 8px', borderRadius: 8 }}>{icon}</span>
@@ -42,10 +57,10 @@ export default function Dashboard() {
         <>
           {/* KPI Cards */}
           <div style={{ display: 'flex', gap: 20, marginBottom: 28 }}>
-            <KpiCard label="Total Vendors" value={stats?.total || 0} color="#1C3C6E" icon="🏢" />
-            <KpiCard label="Empanelled" value={stats?.empanelled || 0} color="#27AE60" icon="✅" />
-            <KpiCard label="In Evaluation" value={stats?.inEval || 0} color="#F39C12" icon="🔍" />
-            <KpiCard label="Contracts Expiring (90d)" value={stats?.expiring || 0} color="#E74C3C" icon="⚠️" />
+            <KpiCard label="Total Vendors" value={stats?.total || 0} color="#1C3C6E" icon="🏢" onClick={() => navigate('/vendors')} />
+            <KpiCard label="Empanelled" value={stats?.empanelled || 0} color="#27AE60" icon="✅" onClick={() => navigate('/vendors?status=Empanelled')} />
+            <KpiCard label="In Evaluation" value={stats?.inEval || 0} color="#F39C12" icon="🔍" onClick={() => navigate('/vendors?status=In+Evaluation')} />
+            <KpiCard label="Contracts Expiring (90d)" value={stats?.expiring || 0} color="#E74C3C" icon="⚠️" onClick={() => navigate('/vendors?expiring=true')} />
           </div>
 
           {/* Lower row */}

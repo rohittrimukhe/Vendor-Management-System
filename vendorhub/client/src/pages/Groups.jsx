@@ -39,7 +39,7 @@ export default function Groups() {
   async function load() {
     setLoading(true);
     const d = await api.get('/api/groups');
-    setGroups(d.data || []);
+    setGroups(d || []);
     setLoading(false);
   }
 

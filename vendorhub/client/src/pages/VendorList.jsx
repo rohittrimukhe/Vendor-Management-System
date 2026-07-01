@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout.jsx';
 import api from '../api.js';
 
@@ -17,12 +17,14 @@ function TierBadge({ tier }) {
 
 export default function VendorList() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
+  const [filterStatus, setFilterStatus] = useState(searchParams.get('status') || '');
   const [filterTier, setFilterTier] = useState('');
   const [filterType, setFilterType] = useState('');
+  const [filterExpiring, setFilterExpiring] = useState(searchParams.get('expiring') === 'true');
   const [viewMode, setViewMode] = useState('table');
   const [deleteId, setDeleteId] = useState(null);
 
@@ -34,13 +36,14 @@ export default function VendorList() {
       if (filterStatus) params.set('status', filterStatus);
       if (filterTier) params.set('tier', filterTier);
       if (filterType) params.set('type', filterType);
+      if (filterExpiring) params.set('expiring', 'true');
       const data = await api.get(`/api/vendors?${params}`);
       setVendors(data);
     } catch {}
     finally { setLoading(false); }
   };
 
-  useEffect(() => { loadVendors(); }, [search, filterStatus, filterTier, filterType]);
+  useEffect(() => { loadVendors(); }, [search, filterStatus, filterTier, filterType, filterExpiring]);
 
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this vendor? This cannot be undone.')) return;
