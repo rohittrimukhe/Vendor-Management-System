@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout.jsx';
 import api from '../api.js';
+import { AuthContext } from '../App.jsx';
 
 function StatusBadge({ status }) {
   const map = { 'Empanelled': ['#27AE60', '#F0FFF4'], 'In Evaluation': ['#F39C12', '#FFFBF0'], 'On Hold': ['#E74C3C', '#FFF5F5'], 'Archived': ['#95A5A6', '#F5F5F5'] };
@@ -17,6 +18,7 @@ function TierBadge({ tier }) {
 
 export default function VendorList() {
   const navigate = useNavigate();
+  const { can } = useContext(AuthContext);
   const [searchParams] = useSearchParams();
   const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -82,12 +84,14 @@ export default function VendorList() {
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
           <button style={btnStyle(viewMode === 'table')} onClick={() => setViewMode('table')}>☰ Table</button>
           <button style={btnStyle(viewMode === 'card')} onClick={() => setViewMode('card')}>⊞ Cards</button>
-          <button
-            onClick={() => navigate('/vendors/add')}
-            style={{ padding: '8px 18px', background: '#1C3C6E', color: '#fff', border: 'none', borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
-          >
-            + Add Vendor
-          </button>
+          {can('Vendors', 'Edit') && (
+            <button
+              onClick={() => navigate('/vendors/add')}
+              style={{ padding: '8px 18px', background: '#1C3C6E', color: '#fff', border: 'none', borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+            >
+              + Add Vendor
+            </button>
+          )}
         </div>
       </div>
 
@@ -134,7 +138,9 @@ export default function VendorList() {
                   <td style={{ padding: '12px 16px' }}>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button onClick={() => navigate(`/vendors/${v.id}`)} style={{ padding: '5px 12px', background: '#EEF5FF', color: '#1C3C6E', border: 'none', borderRadius: 5, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>View</button>
-                      <button onClick={() => handleDelete(v.id)} style={{ padding: '5px 10px', background: '#FFF0F0', color: '#E74C3C', border: 'none', borderRadius: 5, fontSize: 12, cursor: 'pointer' }}>✕</button>
+                      {can('Vendors', 'Full') && (
+                        <button onClick={() => handleDelete(v.id)} style={{ padding: '5px 10px', background: '#FFF0F0', color: '#E74C3C', border: 'none', borderRadius: 5, fontSize: 12, cursor: 'pointer' }}>✕</button>
+                      )}
                     </div>
                   </td>
                 </tr>

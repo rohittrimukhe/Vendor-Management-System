@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { AuthContext } from '../App.jsx';
 
 const NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: '⊞' },
@@ -11,12 +12,14 @@ const ADMIN_ITEMS = [
   { path: '/admin/groups', label: 'Groups & Roles', icon: '🛡' },
   { path: '/admin/permissions', label: 'Permissions', icon: '🔑' },
   { path: '/admin/backup', label: 'Backup & Recovery', icon: '🗄' },
-  { path: '/help', label: 'Help & Guide', icon: '❓' },
 ];
 
 export default function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
+  const auth = useContext(AuthContext);
+  const isAdmin = auth?.isAdmin || false;
+  const user = auth?.user;
 
   const isActive = (path) => {
     if (path === '/') return location.pathname === '/';
@@ -79,22 +82,44 @@ export default function Sidebar() {
           </div>
         ))}
 
-        <div style={{ padding: '16px 20px 6px', fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-          Administration
-        </div>
+        {isAdmin && (
+          <>
+            <div style={{ padding: '16px 20px 6px', fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+              Administration
+            </div>
+            {ADMIN_ITEMS.map(item => (
+              <div key={item.path} style={itemStyle(item.path)} onClick={() => navigate(item.path)}>
+                <span style={{ fontSize: 16 }}>{item.icon}</span>
+                <span>{item.label}</span>
+              </div>
+            ))}
+          </>
+        )}
 
-        {ADMIN_ITEMS.map(item => (
-          <div key={item.path} style={itemStyle(item.path)} onClick={() => navigate(item.path)}>
-            <span style={{ fontSize: 16 }}>{item.icon}</span>
-            <span>{item.label}</span>
-          </div>
-        ))}
+        <div style={{ padding: isAdmin ? '8px 20px 6px' : '16px 20px 6px', fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+          Support
+        </div>
+        <div style={itemStyle('/help')} onClick={() => navigate('/help')}>
+          <span style={{ fontSize: 16 }}>❓</span>
+          <span>Help & Guide</span>
+        </div>
       </nav>
 
-      {/* Footer */}
-      <div style={{ padding: '12px 20px', borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>
-        VendorHub v1.0.0
-      </div>
+      {/* User info + Footer */}
+      {user && (
+        <div style={{ padding: '12px 20px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+            <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#29ABE2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
+              {user.name ? user.name[0].toUpperCase() : 'U'}
+            </div>
+            <div style={{ overflow: 'hidden' }}>
+              <div style={{ fontSize: 13, color: '#fff', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name}</div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>{isAdmin ? 'System Administrator' : (user.group?.name || 'User')}</div>
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>VendorHub v1.0.0</div>
+        </div>
+      )}
     </div>
   );
 }
