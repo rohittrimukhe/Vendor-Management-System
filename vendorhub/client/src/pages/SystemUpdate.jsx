@@ -103,6 +103,20 @@ export default function SystemUpdate() {
           </p>
         </div>
 
+        {/* Git not found warning */}
+        {current?.gitError && (
+          <div style={{ background: '#FFF5F5', border: '1px solid #FFCDD2', borderRadius: 10, padding: '16px 20px', marginBottom: 20 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: '#E74C3C', marginBottom: 6 }}>⚠️ Git not found on this machine</div>
+            <div style={{ fontSize: 13, color: '#555', lineHeight: 1.7 }}>
+              The update system requires <strong>Git</strong> to be installed. Detected path tried: <code style={{ background: '#FEE', padding: '1px 5px', borderRadius: 3 }}>{current.gitPath}</code>
+              <br />
+              <strong>To fix:</strong> Install Git from <strong>git-scm.com</strong>, then restart the VendorHub service so the new PATH is picked up.
+              <br />
+              <span style={{ color: '#aaa', fontSize: 12 }}>Error: {current.gitError}</span>
+            </div>
+          </div>
+        )}
+
         {/* Current version card */}
         {current && (
           <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', padding: '22px 24px', marginBottom: 20 }}>
