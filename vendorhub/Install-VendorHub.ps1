@@ -219,6 +219,22 @@ Set-Content -Path $startBat -Encoding ASCII -Value @"
 title VendorHub Server - LRS Services Pvt Ltd
 color 1F
 echo.
+
+:: Check if port $Port is already in use
+netstat -aon 2>nul | findstr ":$Port " | findstr LISTENING >nul 2>&1
+if not errorlevel 1 (
+    echo  [!] Port $Port is already in use. VendorHub may already be running.
+    echo.
+    echo  If you see VendorHub in your browser at http://localhost:$Port
+    echo  then it is already running - no need to start it again.
+    echo.
+    echo  To stop the existing instance first, run Stop-VendorHub.bat
+    echo  then try starting again.
+    echo.
+    pause
+    exit /b 1
+)
+
 echo  VendorHub is starting up...
 echo  When you see "Server running" below, open your browser to:
 echo.
