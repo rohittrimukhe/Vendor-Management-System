@@ -53,6 +53,10 @@ app.use('/api/permissions', require('./routes/permissions'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/audit', require('./routes/auditlog'));
 app.use('/api/vendors/:vendorId/notes', require('./routes/notes'));
+app.use('/api/vendors/:vendorId/tasks', require('./routes/tasks'));
+app.use('/api/tasks', require('./routes/mytasks'));
+app.use('/api/scoring', require('./routes/scoring'));
+app.use('/api/analytics', require('./routes/analytics'));
 
 // Dashboard stats
 app.get('/api/dashboard/stats', require('./middleware/auth'), (req, res) => {
@@ -68,7 +72,10 @@ app.get('/api/dashboard/stats', require('./middleware/auth'), (req, res) => {
   const domains = db.prepare('SELECT domain, COUNT(*) as count FROM vendor_domains GROUP BY domain ORDER BY count DESC LIMIT 10').all();
   const tierDist = db.prepare("SELECT tier, COUNT(*) as count FROM vendors GROUP BY tier").all();
   const topSpend = db.prepare("SELECT v.id, v.name, v.logo_initial, v.logo_color, COALESCE(SUM(c.value),0) as total FROM vendors v LEFT JOIN contracts c ON c.vendor_id=v.id GROUP BY v.id ORDER BY total DESC LIMIT 5").all();
-  res.json({ data: { total, empanelled, inEval, onHold, archived, expiring, totalSpend, recentVendors, domains, tierDist, topSpend } });
+  const openTasks = db.prepare("SELECT COUNT(*) as c FROM vendor_tasks WHERE status!='Done'").get().c;
+  const overdueTasks = db.prepare("SELECT COUNT(*) as c FROM vendor_tasks WHERE status!='Done' AND due_date < date('now')").get().c;
+  const highRisk = db.prepare("SELECT COUNT(*) as c FROM vendors WHERE risk_level IN ('High','Critical')").get().c;
+  res.json({ data: { total, empanelled, inEval, onHold, archived, expiring, totalSpend, recentVendors, domains, tierDist, topSpend, openTasks, overdueTasks, highRisk } });
 });
 
 // Static files

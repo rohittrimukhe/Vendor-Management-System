@@ -35,6 +35,10 @@ export default function VendorList() {
   const [filterExpiring, setFilterExpiring] = useState(searchParams.get('expiring') === 'true');
   const [viewMode, setViewMode] = useState('table');
   const [deleteId, setDeleteId] = useState(null);
+  const [selected, setSelected] = useState([]);
+  const [bulkAction, setBulkAction] = useState('');
+  const [bulkValue, setBulkValue] = useState('');
+  const [bulkConfirm, setBulkConfirm] = useState(false);
 
   const loadVendors = async () => {
     setLoading(true);
@@ -51,7 +55,20 @@ export default function VendorList() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { loadVendors(); }, [search, filterStatus, filterTier, filterType, filterExpiring]);
+  useEffect(() => { loadVendors(); setSelected([]); }, [search, filterStatus, filterTier, filterType, filterExpiring]);
+
+  const toggleSelect = (id) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleAll = () => setSelected(prev => prev.length === vendors.length ? [] : vendors.map(v => v.id));
+
+  const runBulkAction = async () => {
+    if (!bulkAction || !selected.length) return;
+    if (bulkAction !== 'delete' && !bulkValue) return;
+    try {
+      await api.post('/api/vendors/bulk', { ids: selected, action: bulkAction, value: bulkValue });
+      setSelected([]); setBulkAction(''); setBulkValue(''); setBulkConfirm(false);
+      loadVendors();
+    } catch (e) { alert(e.message); }
+  };
 
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this vendor? This cannot be undone.')) return;
@@ -127,6 +144,47 @@ export default function VendorList() {
         </div>
       </div>
 
+      {/* Bulk Action Bar */}
+      {selected.length > 0 && can('Vendors', 'Edit') && (
+        <div style={{ background: '#1C3C6E', borderRadius: 10, padding: '12px 18px', marginBottom: 12, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ color: '#fff', fontSize: 14, fontWeight: 600 }}>{selected.length} selected</span>
+          <select value={bulkAction} onChange={e => { setBulkAction(e.target.value); setBulkValue(''); }}
+            style={{ padding: '7px 12px', borderRadius: 6, border: 'none', fontSize: 13, background: 'rgba(255,255,255,0.15)', color: '#fff', outline: 'none' }}>
+            <option value="">— Choose action —</option>
+            <option value="status">Change Status</option>
+            <option value="tier">Change Tier</option>
+            {can('Vendors', 'Full') && <option value="delete">Delete Selected</option>}
+          </select>
+          {bulkAction === 'status' && (
+            <select value={bulkValue} onChange={e => setBulkValue(e.target.value)}
+              style={{ padding: '7px 12px', borderRadius: 6, border: 'none', fontSize: 13, background: 'rgba(255,255,255,0.15)', color: '#fff', outline: 'none' }}>
+              <option value="">— Select Status —</option>
+              <option>Empanelled</option><option>In Evaluation</option><option>On Hold</option><option>Archived</option>
+            </select>
+          )}
+          {bulkAction === 'tier' && (
+            <select value={bulkValue} onChange={e => setBulkValue(e.target.value)}
+              style={{ padding: '7px 12px', borderRadius: 6, border: 'none', fontSize: 13, background: 'rgba(255,255,255,0.15)', color: '#fff', outline: 'none' }}>
+              <option value="">— Select Tier —</option>
+              <option>Tier 1</option><option>Tier 2</option><option>Tier 3</option>
+            </select>
+          )}
+          {bulkAction === 'delete' && (
+            <span style={{ color: '#FFCDD2', fontSize: 13 }}>⚠ This will permanently delete {selected.length} vendors</span>
+          )}
+          <button
+            onClick={runBulkAction}
+            disabled={!bulkAction || (bulkAction !== 'delete' && !bulkValue)}
+            style={{ padding: '7px 18px', background: bulkAction === 'delete' ? '#E74C3C' : '#29ABE2', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: (!bulkAction || (bulkAction !== 'delete' && !bulkValue)) ? 0.5 : 1 }}
+          >
+            Apply
+          </button>
+          <button onClick={() => { setSelected([]); setBulkAction(''); setBulkValue(''); }} style={{ padding: '7px 14px', background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 6, fontSize: 13, cursor: 'pointer' }}>
+            Cancel
+          </button>
+        </div>
+      )}
+
       {importResult && (
         <div style={{ background: importResult.error ? '#FFF5F5' : '#F0FFF4', border: `1px solid ${importResult.error ? '#FFCDD2' : '#C8E6C9'}`, borderRadius: 8, padding: '10px 16px', marginBottom: 12, fontSize: 13, color: importResult.error ? '#E74C3C' : '#27AE60', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>{importResult.error ? `Import failed: ${importResult.error}` : `Import complete: ${importResult.imported} vendors added, ${importResult.skipped} skipped`}</span>
@@ -145,6 +203,9 @@ export default function VendorList() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#F5F6FA' }}>
+                <th style={{ padding: '12px 8px 12px 16px', borderBottom: '1px solid #E8ECF0', width: 36 }}>
+                  <input type="checkbox" checked={vendors.length > 0 && selected.length === vendors.length} onChange={toggleAll} style={{ cursor: 'pointer' }} />
+                </th>
                 {['Vendor', 'Domains', 'Tier', 'Status', 'Risk', 'Type', 'Added', 'Actions'].map(h => (
                   <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #E8ECF0' }}>{h}</th>
                 ))}
@@ -152,12 +213,15 @@ export default function VendorList() {
             </thead>
             <tbody>
               {!loading && vendors.length === 0 && (
-                <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: '#aaa', fontSize: 15 }}>No vendors found. <span onClick={() => navigate('/vendors/add')} style={{ color: '#29ABE2', cursor: 'pointer' }}>Add your first vendor →</span></td></tr>
+                <tr><td colSpan={9} style={{ padding: 40, textAlign: 'center', color: '#aaa', fontSize: 15 }}>No vendors found. <span onClick={() => navigate('/vendors/add')} style={{ color: '#29ABE2', cursor: 'pointer' }}>Add your first vendor →</span></td></tr>
               )}
               {vendors.map(v => (
-                <tr key={v.id} style={{ borderBottom: '1px solid #F0F4F8', transition: 'background 0.1s' }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#FAFBFC'}
-                  onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
+                <tr key={v.id} style={{ borderBottom: '1px solid #F0F4F8', transition: 'background 0.1s', background: selected.includes(v.id) ? '#EEF9FF' : '#fff' }}
+                  onMouseEnter={e => { if (!selected.includes(v.id)) e.currentTarget.style.background = '#FAFBFC'; }}
+                  onMouseLeave={e => { if (!selected.includes(v.id)) e.currentTarget.style.background = '#fff'; }}>
+                  <td style={{ padding: '12px 8px 12px 16px' }} onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={selected.includes(v.id)} onChange={() => toggleSelect(v.id)} style={{ cursor: 'pointer' }} />
+                  </td>
                   <td style={{ padding: '12px 16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <div style={{ width: 36, height: 36, borderRadius: 8, background: v.logo_color || '#1C3C6E', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>{v.logo_initial || v.name[0]}</div>

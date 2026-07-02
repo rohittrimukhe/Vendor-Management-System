@@ -15,6 +15,9 @@ import Backup from './pages/Backup.jsx';
 import Help from './pages/Help.jsx';
 import AuditLog from './pages/AuditLog.jsx';
 import VendorCompare from './pages/VendorCompare.jsx';
+import SpendAnalytics from './pages/SpendAnalytics.jsx';
+import MyTasks from './pages/MyTasks.jsx';
+import ScoringCriteria from './pages/ScoringCriteria.jsx';
 
 export const AuthContext = createContext(null);
 
@@ -62,7 +65,6 @@ function AppRoutes() {
     );
   }
 
-  // Build a permission checker: isAdmin gets full access to everything
   function can(module, minLevel = 'Read') {
     if (!user) return false;
     if (user.isAdmin) return true;
@@ -81,11 +83,16 @@ function AppRoutes() {
         <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/vendors" element={<ProtectedRoute><VendorList /></ProtectedRoute>} />
         <Route path="/vendors/add" element={<ProtectedRoute><AddVendor /></ProtectedRoute>} />
+        <Route path="/vendors/compare" element={<ProtectedRoute><VendorCompare /></ProtectedRoute>} />
         <Route path="/vendors/:id" element={<ProtectedRoute><VendorDetail /></ProtectedRoute>} />
+        <Route path="/analytics" element={<ProtectedRoute><SpendAnalytics /></ProtectedRoute>} />
+        <Route path="/tasks" element={<ProtectedRoute><MyTasks /></ProtectedRoute>} />
         <Route path="/admin/users" element={<AdminRoute><Users /></AdminRoute>} />
         <Route path="/admin/groups" element={<AdminRoute><Groups /></AdminRoute>} />
         <Route path="/admin/permissions" element={<AdminRoute><Permissions /></AdminRoute>} />
         <Route path="/admin/backup" element={<AdminRoute><Backup /></AdminRoute>} />
+        <Route path="/admin/audit" element={<AdminRoute><AuditLog /></AdminRoute>} />
+        <Route path="/admin/scoring" element={<AdminRoute><ScoringCriteria /></AdminRoute>} />
         <Route path="/help" element={<ProtectedRoute><Help /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
