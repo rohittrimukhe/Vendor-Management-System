@@ -4,7 +4,7 @@ import Layout from '../components/Layout.jsx';
 import api from '../api.js';
 import { AuthContext } from '../App.jsx';
 
-const TABS = ['Overview', 'Contacts', 'Documents', 'Contracts & SLA', 'Performance', 'Escalation', 'Notes'];
+const TABS = ['Overview', 'Contacts', 'Documents', 'Contracts & SLA', 'Performance', 'Escalation', 'Notes', 'Tasks', 'Scorecard'];
 
 const inputStyle = { width: '100%', padding: '9px 12px', border: '1px solid #DDE2E8', borderRadius: 6, fontSize: 13, outline: 'none' };
 const labelStyle = { display: 'block', fontSize: 12, fontWeight: 600, color: '#444', marginBottom: 4 };
@@ -57,6 +57,14 @@ export default function VendorDetail() {
   const [newNote, setNewNote] = useState('');
   const [savingNote, setSavingNote] = useState(false);
 
+  const [tasks, setTasks] = useState([]);
+  const [allUsers, setAllUsers] = useState([]);
+
+  const [scoreData, setScoreData] = useState({ data: [], compositeScore: null, totalWeight: 0 });
+  const [editingScores, setEditingScores] = useState(false);
+  const [draftScores, setDraftScores] = useState({});
+  const [savingScores, setSavingScores] = useState(false);
+
   const [modal, setModal] = useState(null);
   const [modalData, setModalData] = useState({});
   const [modalError, setModalError] = useState('');
@@ -70,10 +78,13 @@ export default function VendorDetail() {
   const loadPerformance = () => api.get(`/api/vendors/${id}/performance`).then(setPerformance).catch(() => {});
   const loadEscalation = () => api.get(`/api/vendors/${id}/performance/escalation`).then(setEscalation).catch(() => {});
   const loadNotes = () => api.get(`/api/vendors/${id}/notes`).then(setNotes).catch(() => {});
+  const loadTasks = () => api.get(`/api/vendors/${id}/tasks`).then(setTasks).catch(() => {});
+  const loadScores = () => api.get(`/api/scoring/vendors/${id}`).then(d => { setScoreData(d); }).catch(() => {});
 
   useEffect(() => {
-    Promise.all([loadVendor(), loadContacts(), loadDocuments(), loadContracts(), loadPerformance(), loadEscalation(), loadNotes()])
+    Promise.all([loadVendor(), loadContacts(), loadDocuments(), loadContracts(), loadPerformance(), loadEscalation(), loadNotes(), loadTasks(), loadScores()])
       .finally(() => setLoading(false));
+    api.get('/api/users').then(d => setAllUsers(Array.isArray(d) ? d : [])).catch(() => {});
   }, [id]);
 
   const openModal = (name, data = {}) => { setModal(name); setModalData(data); setModalError(''); };
@@ -477,7 +488,248 @@ export default function VendorDetail() {
     );
   };
 
-  const tabContent = [renderOverview, renderContacts, renderDocuments, renderContracts, renderPerformance, renderEscalation, renderNotes];
+  const PRIORITY_COLOR = { Urgent: '#E74C3C', High: '#E67E22', Medium: '#F39C12', Low: '#27AE60' };
+  const PRIORITY_BG = { Urgent: '#FFF5F5', High: '#FFF3E0', Medium: '#FFFBF0', Low: '#F0FFF4' };
+
+  const renderTasks = () => {
+    const [taskModal, setTaskModal] = React.useState(false);
+    const [taskForm, setTaskForm] = React.useState({ title: '', description: '', assigned_to_id: '', due_date: '', priority: 'Medium', status: 'Open' });
+    const [taskSaving, setTaskSaving] = React.useState(false);
+
+    const saveTask = async () => {
+      if (!taskForm.title.trim()) return;
+      setTaskSaving(true);
+      try {
+        await api.post(`/api/vendors/${id}/tasks`, taskForm);
+        setTaskModal(false);
+        setTaskForm({ title: '', description: '', assigned_to_id: '', due_date: '', priority: 'Medium', status: 'Open' });
+        loadTasks();
+      } catch (e) { alert(e.message); }
+      setTaskSaving(false);
+    };
+
+    const updateTask = async (taskId, updates) => {
+      try { await api.put(`/api/vendors/${id}/tasks/${taskId}`, updates); loadTasks(); } catch (e) { alert(e.message); }
+    };
+
+    const deleteTask = async (taskId) => {
+      if (!window.confirm('Delete task?')) return;
+      try { await api.delete(`/api/vendors/${id}/tasks/${taskId}`); loadTasks(); } catch (e) { alert(e.message); }
+    };
+
+    const open = tasks.filter(t => t.status === 'Open');
+    const inProg = tasks.filter(t => t.status === 'In Progress');
+    const done = tasks.filter(t => t.status === 'Done');
+
+    return (
+      <div>
+        {can('Vendors', 'Edit') && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+            <button onClick={() => setTaskModal(true)} style={{ padding: '8px 18px', background: '#1C3C6E', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>+ Add Task</button>
+          </div>
+        )}
+
+        {tasks.length === 0 && (
+          <div style={{ padding: 60, textAlign: 'center', color: '#aaa' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
+            <div style={{ fontSize: 14, color: '#555', fontWeight: 600 }}>No tasks yet</div>
+            <div style={{ fontSize: 13, color: '#aaa', marginTop: 4 }}>Add tasks to track action items and follow-ups for this vendor</div>
+          </div>
+        )}
+
+        {[{ label: 'Open', items: open, color: '#29ABE2' }, { label: 'In Progress', items: inProg, color: '#8E44AD' }, { label: 'Done', items: done, color: '#27AE60' }].map(group => group.items.length > 0 && (
+          <div key={group.label} style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: group.color, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>{group.label} ({group.items.length})</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {group.items.map(t => {
+                const isOverdue = t.status !== 'Done' && t.due_date && t.due_date < new Date().toISOString().split('T')[0];
+                return (
+                  <div key={t.id} style={{ background: '#F8FAFC', borderRadius: 8, padding: '14px 16px', borderLeft: `3px solid ${PRIORITY_COLOR[t.priority] || '#DDE2E8'}`, display: 'flex', gap: 12 }}>
+                    <div onClick={() => updateTask(t.id, { status: t.status === 'Done' ? 'Open' : 'Done' })}
+                      style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${t.status === 'Done' ? '#27AE60' : '#DDE2E8'}`, background: t.status === 'Done' ? '#27AE60' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, marginTop: 2 }}>
+                      {t.status === 'Done' && <span style={{ color: '#fff', fontSize: 10 }}>✓</span>}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: '#1C3C6E', textDecoration: t.status === 'Done' ? 'line-through' : 'none' }}>{t.title}</span>
+                        <span style={{ padding: '1px 7px', borderRadius: 10, fontSize: 11, fontWeight: 700, color: PRIORITY_COLOR[t.priority], background: PRIORITY_BG[t.priority] }}>{t.priority}</span>
+                      </div>
+                      {t.description && <p style={{ fontSize: 13, color: '#666', margin: '0 0 6px', lineHeight: 1.5 }}>{t.description}</p>}
+                      <div style={{ display: 'flex', gap: 14, fontSize: 12, color: '#888', flexWrap: 'wrap' }}>
+                        {t.assigned_to && <span>👤 {t.assigned_to}</span>}
+                        {t.due_date && <span style={{ color: isOverdue ? '#E74C3C' : '#888', fontWeight: isOverdue ? 600 : 400 }}>📅 {isOverdue ? 'Overdue: ' : ''}{t.due_date}</span>}
+                        <span>by {t.created_by}</span>
+                      </div>
+                    </div>
+                    {can('Vendors', 'Edit') && (
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                        {t.status !== 'Done' && (
+                          <select value={t.status} onChange={e => updateTask(t.id, { status: e.target.value })}
+                            style={{ padding: '4px 8px', border: '1px solid #DDE2E8', borderRadius: 5, fontSize: 11, background: '#fff', cursor: 'pointer' }}>
+                            <option>Open</option><option>In Progress</option><option>Done</option>
+                          </select>
+                        )}
+                        <button onClick={() => deleteTask(t.id)} style={{ padding: '4px 8px', background: '#FFF0F0', color: '#E74C3C', border: 'none', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}>✕</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+
+        {taskModal && (
+          <Modal title="Add Task" onClose={() => setTaskModal(false)}>
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>Title *</label>
+              <input style={inputStyle} placeholder="Task title" value={taskForm.title} onChange={e => setTaskForm({ ...taskForm, title: e.target.value })} />
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>Description</label>
+              <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} placeholder="Details..." value={taskForm.description} onChange={e => setTaskForm({ ...taskForm, description: e.target.value })} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+              <div>
+                <label style={labelStyle}>Priority</label>
+                <select style={inputStyle} value={taskForm.priority} onChange={e => setTaskForm({ ...taskForm, priority: e.target.value })}>
+                  <option>Low</option><option>Medium</option><option>High</option><option>Urgent</option>
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Due Date</label>
+                <input type="date" style={inputStyle} value={taskForm.due_date} onChange={e => setTaskForm({ ...taskForm, due_date: e.target.value })} />
+              </div>
+            </div>
+            <div style={{ marginBottom: 18 }}>
+              <label style={labelStyle}>Assign To</label>
+              <select style={inputStyle} value={taskForm.assigned_to_id} onChange={e => setTaskForm({ ...taskForm, assigned_to_id: e.target.value })}>
+                <option value="">— Unassigned —</option>
+                {allUsers.map(u => <option key={u.id} value={u.id}>{u.name} (@{u.username})</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button style={btnSecondary} onClick={() => setTaskModal(false)}>Cancel</button>
+              <button style={btnPrimary} onClick={saveTask} disabled={taskSaving || !taskForm.title.trim()}>{taskSaving ? 'Saving...' : 'Add Task'}</button>
+            </div>
+          </Modal>
+        )}
+      </div>
+    );
+  };
+
+  const renderScorecard = () => {
+    const { data: criteria, compositeScore, totalWeight } = scoreData;
+    const hasScores = criteria.some(c => c.score !== null);
+
+    const startEdit = () => {
+      const draft = {};
+      criteria.forEach(c => { draft[c.id] = { score: c.score ?? 50, notes: c.notes || '' }; });
+      setDraftScores(draft);
+      setEditingScores(true);
+    };
+
+    const saveScores = async () => {
+      setSavingScores(true);
+      try {
+        const scores = Object.entries(draftScores).map(([criteria_id, v]) => ({ criteria_id: parseInt(criteria_id), score: v.score, notes: v.notes }));
+        await api.post(`/api/scoring/vendors/${id}`, { scores });
+        await loadScores();
+        setEditingScores(false);
+      } catch (e) { alert(e.message); }
+      setSavingScores(false);
+    };
+
+    if (!criteria.length) return (
+      <div style={{ padding: 60, textAlign: 'center', color: '#aaa' }}>
+        <div style={{ fontSize: 36, marginBottom: 8 }}>📊</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#555', marginBottom: 4 }}>No scoring criteria configured</div>
+        <div style={{ fontSize: 13, color: '#aaa' }}>Ask an admin to set up scoring criteria in Admin → Scoring Criteria</div>
+      </div>
+    );
+
+    const scoreColor = (s) => s >= 75 ? '#27AE60' : s >= 50 ? '#F39C12' : '#E74C3C';
+    const compositeColor = compositeScore >= 75 ? '#27AE60' : compositeScore >= 50 ? '#F39C12' : compositeScore !== null ? '#E74C3C' : '#888';
+
+    return (
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+            {compositeScore !== null && (
+              <div style={{ textAlign: 'center', background: '#F8FAFC', borderRadius: 12, padding: '16px 24px' }}>
+                <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Composite Score</div>
+                <div style={{ fontFamily: 'Montserrat', fontWeight: 700, fontSize: 36, color: compositeColor }}>{compositeScore}</div>
+                <div style={{ fontSize: 11, color: '#aaa' }}>out of 100</div>
+              </div>
+            )}
+            {!hasScores && <p style={{ color: '#aaa', fontSize: 13 }}>Vendor not yet scored. Click "Score Vendor" to evaluate.</p>}
+          </div>
+          {can('Vendors', 'Edit') && !editingScores && (
+            <button onClick={startEdit} style={{ padding: '8px 18px', background: '#1C3C6E', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
+              {hasScores ? 'Update Scores' : 'Score Vendor'}
+            </button>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {criteria.map(c => {
+            const ds = draftScores[c.id];
+            const displayScore = editingScores ? ds?.score : c.score;
+            return (
+              <div key={c.id} style={{ background: '#F8FAFC', borderRadius: 10, padding: '16px 20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: '#1C3C6E' }}>{c.name}</div>
+                    <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Weight: {c.weight}% {c.description && `• ${c.description}`}</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    {displayScore !== null && displayScore !== undefined ? (
+                      <span style={{ fontFamily: 'Montserrat', fontWeight: 700, fontSize: 22, color: scoreColor(displayScore) }}>{displayScore}</span>
+                    ) : (
+                      <span style={{ fontSize: 13, color: '#aaa' }}>Not scored</span>
+                    )}
+                  </div>
+                </div>
+
+                {editingScores ? (
+                  <div>
+                    <input type="range" min={0} max={100} step={5} value={ds?.score ?? 50}
+                      onChange={e => setDraftScores(prev => ({ ...prev, [c.id]: { ...prev[c.id], score: parseInt(e.target.value) } }))}
+                      style={{ width: '100%', marginBottom: 8 }} />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#aaa', marginBottom: 8 }}>
+                      <span>0 — Poor</span><span>50 — Average</span><span>100 — Excellent</span>
+                    </div>
+                    <input placeholder="Notes (optional)" value={ds?.notes || ''}
+                      onChange={e => setDraftScores(prev => ({ ...prev, [c.id]: { ...prev[c.id], notes: e.target.value } }))}
+                      style={{ ...inputStyle, fontSize: 12 }} />
+                  </div>
+                ) : (
+                  displayScore !== null && displayScore !== undefined && (
+                    <div>
+                      <div style={{ height: 8, background: '#E8ECF0', borderRadius: 4, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${displayScore}%`, background: scoreColor(displayScore), borderRadius: 4, transition: 'width 0.6s' }} />
+                      </div>
+                      {c.notes && <div style={{ fontSize: 12, color: '#888', marginTop: 6, fontStyle: 'italic' }}>{c.notes}</div>}
+                      {c.scored_by && <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>Scored by {c.scored_by} on {c.scored_at?.split('T')[0]}</div>}
+                    </div>
+                  )
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {editingScores && (
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
+            <button style={btnSecondary} onClick={() => setEditingScores(false)}>Cancel</button>
+            <button style={btnPrimary} onClick={saveScores} disabled={savingScores}>{savingScores ? 'Saving...' : 'Save Scores'}</button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const tabContent = [renderOverview, renderContacts, renderDocuments, renderContracts, renderPerformance, renderEscalation, renderNotes, renderTasks, renderScorecard];
 
   const btnPrimary = { padding: '9px 20px', background: '#1C3C6E', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600 };
   const btnSecondary = { padding: '9px 18px', border: '1px solid #DDE2E8', borderRadius: 6, background: '#fff', cursor: 'pointer', fontSize: 14, color: '#555' };

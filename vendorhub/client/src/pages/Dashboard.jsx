@@ -102,8 +102,11 @@ export default function Dashboard() {
             <KpiCard label="Empanelled" value={stats?.empanelled || 0} color="#27AE60" icon="✅" onClick={() => navigate('/vendors?status=Empanelled')} />
             <KpiCard label="In Evaluation" value={stats?.inEval || 0} color="#F39C12" icon="🔍" onClick={() => navigate('/vendors?status=In+Evaluation')} />
             <KpiCard label="Expiring (90d)" value={stats?.expiring || 0} color="#E74C3C" icon="⚠️" sub="contracts expiring" onClick={() => navigate('/vendors?expiring=true')} />
+            {(stats?.openTasks > 0 || stats?.overdueTasks > 0) && (
+              <KpiCard label="Open Tasks" value={stats?.openTasks || 0} color={stats?.overdueTasks > 0 ? '#E74C3C' : '#8E44AD'} icon="📋" sub={stats?.overdueTasks > 0 ? `${stats.overdueTasks} overdue` : 'action items'} onClick={() => navigate('/tasks')} />
+            )}
             {stats?.totalSpend > 0 && (
-              <KpiCard label="Active Contract Value" value={`₹${(stats.totalSpend / 100000).toFixed(1)}L`} color="#8E44AD" icon="💰" sub="total active contracts" />
+              <KpiCard label="Active Contract Value" value={`₹${(stats.totalSpend / 100000).toFixed(1)}L`} color="#16A085" icon="💰" sub="total active contracts" onClick={() => navigate('/analytics')} />
             )}
           </div>
 

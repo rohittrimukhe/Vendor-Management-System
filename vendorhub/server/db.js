@@ -171,6 +171,43 @@ const migrations = [
   )`,
   `ALTER TABLE vendors ADD COLUMN risk_score INTEGER DEFAULT 0`,
   `ALTER TABLE vendors ADD COLUMN risk_level TEXT DEFAULT 'Low'`,
+  `ALTER TABLE documents ADD COLUMN category TEXT DEFAULT 'Other'`,
+  `ALTER TABLE documents ADD COLUMN expiry_date DATE`,
+  `ALTER TABLE documents ADD COLUMN description TEXT`,
+  `CREATE TABLE IF NOT EXISTS vendor_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vendor_id INTEGER REFERENCES vendors(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT,
+    assigned_to TEXT,
+    assigned_to_id INTEGER REFERENCES users(id),
+    due_date DATE,
+    priority TEXT DEFAULT 'Medium',
+    status TEXT DEFAULT 'Open',
+    created_by TEXT,
+    created_by_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    completed_at DATETIME
+  )`,
+  `CREATE TABLE IF NOT EXISTS scoring_criteria (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    weight INTEGER DEFAULT 20,
+    description TEXT,
+    sort_order INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS vendor_scores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vendor_id INTEGER REFERENCES vendors(id) ON DELETE CASCADE,
+    criteria_id INTEGER REFERENCES scoring_criteria(id) ON DELETE CASCADE,
+    score INTEGER DEFAULT 0,
+    notes TEXT,
+    scored_by TEXT,
+    scored_by_id INTEGER,
+    scored_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(vendor_id, criteria_id)
+  )`,
 ];
 
 for (const sql of migrations) {

@@ -91,6 +91,37 @@ router.get('/', requirePermission('Vendors', 'Read'), (req, res) => {
   }
 });
 
+// Bulk Actions
+router.post('/bulk', requirePermission('Vendors', 'Edit'), (req, res) => {
+  const { ids, action, value } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array required' });
+
+  if (action === 'delete') {
+    if (ids.length > 50) return res.status(400).json({ error: 'Max 50 vendors per bulk delete' });
+    const deleteVendor = db.prepare('DELETE FROM vendors WHERE id = ?');
+    db.transaction(() => { ids.forEach(id => deleteVendor.run(id)); })();
+    return res.json({ data: { affected: ids.length } });
+  }
+
+  if (action === 'status') {
+    const allowed = ['Empanelled', 'In Evaluation', 'On Hold', 'Archived'];
+    if (!allowed.includes(value)) return res.status(400).json({ error: 'Invalid status' });
+    const upd = db.prepare("UPDATE vendors SET empanelment_status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
+    db.transaction(() => { ids.forEach(id => upd.run(value, id)); })();
+    return res.json({ data: { affected: ids.length } });
+  }
+
+  if (action === 'tier') {
+    const allowed = ['Tier 1', 'Tier 2', 'Tier 3'];
+    if (!allowed.includes(value)) return res.status(400).json({ error: 'Invalid tier' });
+    const upd = db.prepare("UPDATE vendors SET tier=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
+    db.transaction(() => { ids.forEach(id => upd.run(value, id)); })();
+    return res.json({ data: { affected: ids.length } });
+  }
+
+  return res.status(400).json({ error: 'Unknown action' });
+});
+
 // CSV Export — must be before /:id routes
 router.get('/export', requirePermission('Vendors', 'Read'), (req, res) => {
   const vendors = db.prepare('SELECT * FROM vendors ORDER BY name').all();
