@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { path: '/vendors/compare', label: 'Compare Vendors', icon: '⚖' },
   { path: '/analytics', label: 'Spend Analytics', icon: '📈' },
   { path: '/tasks', label: 'My Tasks', icon: '✅' },
+  { path: '/approvals', label: 'Approvals', icon: '🔖' },
 ];
 
 const ADMIN_ITEMS = [
@@ -17,6 +18,7 @@ const ADMIN_ITEMS = [
   { path: '/admin/backup', label: 'Backup & Recovery', icon: '🗄' },
   { path: '/admin/audit', label: 'Audit Log', icon: '📋' },
   { path: '/admin/scoring', label: 'Scoring Criteria', icon: '📊' },
+  { path: '/admin/custom-fields', label: 'Custom Fields', icon: '🧩' },
 ];
 
 export default function Sidebar() {

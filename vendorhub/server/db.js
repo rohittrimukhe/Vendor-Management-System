@@ -208,6 +208,55 @@ const migrations = [
     scored_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(vendor_id, criteria_id)
   )`,
+  `CREATE TABLE IF NOT EXISTS vendor_onboarding (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vendor_id INTEGER REFERENCES vendors(id) ON DELETE CASCADE,
+    stage TEXT NOT NULL,
+    status TEXT DEFAULT 'Pending',
+    assigned_to TEXT,
+    notes TEXT,
+    sort_order INTEGER DEFAULT 0,
+    created_by TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS custom_field_definitions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    field_type TEXT DEFAULT 'text',
+    applies_to TEXT DEFAULT 'all',
+    options TEXT,
+    required INTEGER DEFAULT 0,
+    sort_order INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS vendor_custom_fields (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vendor_id INTEGER REFERENCES vendors(id) ON DELETE CASCADE,
+    field_def_id INTEGER REFERENCES custom_field_definitions(id) ON DELETE CASCADE,
+    value TEXT,
+    UNIQUE(vendor_id, field_def_id)
+  )`,
+  // Vendor visibility: who can see a vendor
+  `ALTER TABLE vendors ADD COLUMN visibility TEXT DEFAULT 'everyone'`,
+  `CREATE TABLE IF NOT EXISTS vendor_visibility_users (
+    vendor_id INTEGER REFERENCES vendors(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (vendor_id, user_id)
+  )`,
+  // Vendor approval workflow
+  `ALTER TABLE vendors ADD COLUMN approval_status TEXT DEFAULT 'approved'`,
+  `ALTER TABLE vendors ADD COLUMN approval_requested_by INTEGER REFERENCES users(id)`,
+  `ALTER TABLE vendors ADD COLUMN approval_reviewer_id INTEGER REFERENCES users(id)`,
+  `CREATE TABLE IF NOT EXISTS vendor_approval_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vendor_id INTEGER REFERENCES vendors(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id),
+    username TEXT,
+    role TEXT,
+    note TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`,
 ];
 
 for (const sql of migrations) {
