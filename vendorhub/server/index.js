@@ -60,6 +60,7 @@ app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/vendors/:vendorId/onboarding', require('./routes/onboarding'));
 app.use('/api/vendors/:vendorId/timeline', require('./routes/timeline'));
 app.use('/api/custom-fields', require('./routes/customfields'));
+app.use('/api/update', require('./routes/update'));
 
 // Pending approvals for current user's direct reports
 app.get('/api/approvals/pending', require('./middleware/auth'), (req, res) => {

@@ -20,6 +20,7 @@ const ADMIN_ITEMS = [
   { path: '/admin/audit', label: 'Audit Log', icon: '📋' },
   { path: '/admin/scoring', label: 'Scoring Criteria', icon: '📊' },
   { path: '/admin/custom-fields', label: 'Custom Fields', icon: '🧩' },
+  { path: '/admin/update', label: 'System Update', icon: '🔄' },
 ];
 
 export default function Sidebar() {
