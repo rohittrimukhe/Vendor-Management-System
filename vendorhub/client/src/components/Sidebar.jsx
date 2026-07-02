@@ -1,6 +1,7 @@
-import React, { useContext } from 'react';
+import React, { useContext, useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { AuthContext } from '../App.jsx';
+import api from '../api.js';
 
 const NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: '⊞' },
@@ -27,6 +28,15 @@ export default function Sidebar() {
   const auth = useContext(AuthContext);
   const isAdmin = auth?.isAdmin || false;
   const user = auth?.user;
+  const [pendingApprovals, setPendingApprovals] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    const poll = () => api.get('/api/approvals/pending').then(d => setPendingApprovals((d?.pendingForMe || []).length)).catch(() => {});
+    poll();
+    const timer = setInterval(poll, 60000);
+    return () => clearInterval(timer);
+  }, [user]);
 
   const isActive = (path) => {
     if (path === '/') return location.pathname === '/';
@@ -87,7 +97,10 @@ export default function Sidebar() {
         {NAV_ITEMS.map(item => (
           <div key={item.path} style={itemStyle(item.path)} onClick={() => navigate(item.path)}>
             <span style={{ fontSize: 16 }}>{item.icon}</span>
-            <span>{item.label}</span>
+            <span style={{ flex: 1 }}>{item.label}</span>
+            {item.path === '/approvals' && pendingApprovals > 0 && (
+              <span style={{ background: '#E74C3C', color: '#fff', borderRadius: 10, padding: '1px 6px', fontSize: 10, fontWeight: 700, marginLeft: 4 }}>{pendingApprovals}</span>
+            )}
           </div>
         ))}
 

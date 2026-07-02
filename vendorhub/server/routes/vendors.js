@@ -211,8 +211,8 @@ router.post('/', requirePermission('Vendors', 'Edit'), auditLog('Vendor', 'CREAT
     const initial = name.charAt(0).toUpperCase();
     const color = COLORS[Math.floor(Math.random() * COLORS.length)];
 
-    const user = db.prepare('SELECT id, username, reporting_manager_id FROM users WHERE id = ?').get(req.session.userId);
-    const isAdmin = user?.group_id === 1 || (() => { const u = db.prepare('SELECT group_id FROM users WHERE id=?').get(req.session.userId); return u?.group_id === 1; })();
+    const user = db.prepare('SELECT id, username, group_id, reporting_manager_id FROM users WHERE id = ?').get(req.session.userId);
+    const isAdmin = user?.group_id === 1;
     const today = new Date().toISOString().split('T')[0];
     // If user has a reporting manager, send for approval
     const approvalStatus = (!isAdmin && user?.reporting_manager_id) ? 'pending_review' : 'approved';
