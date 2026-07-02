@@ -16,10 +16,16 @@ function TierBadge({ tier }) {
   return <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, color: c, background: bg }}>{tier}</span>;
 }
 
+const RISK_COLOR = { Low: '#27AE60', Medium: '#F39C12', High: '#E67E22', Critical: '#E74C3C' };
+const RISK_BG = { Low: '#F0FFF4', Medium: '#FFFBF0', High: '#FFF3E0', Critical: '#FFF5F5' };
+
 export default function VendorList() {
   const navigate = useNavigate();
   const { can } = useContext(AuthContext);
   const [searchParams] = useSearchParams();
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const importRef = React.useRef();
   const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -55,6 +61,26 @@ export default function VendorList() {
     } catch (e) { alert(e.message); }
   };
 
+  const handleExport = () => {
+    window.open('/api/vendors/export', '_blank');
+  };
+
+  const handleImport = async (file) => {
+    if (!file) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/vendors/import', { method: 'POST', body: fd, credentials: 'include' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Import failed');
+      setImportResult(data.data || data);
+      loadVendors();
+    } catch (e) { setImportResult({ error: e.message }); }
+    setImporting(false);
+  };
+
   const selStyle = { padding: '8px 12px', border: '1px solid #DDE2E8', borderRadius: 6, fontSize: 13, background: '#fff', outline: 'none' };
   const btnStyle = (active) => ({ padding: '8px 12px', border: '1px solid #DDE2E8', borderRadius: 6, background: active ? '#1C3C6E' : '#fff', color: active ? '#fff' : '#555', cursor: 'pointer', fontSize: 13 });
 
@@ -84,16 +110,29 @@ export default function VendorList() {
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
           <button style={btnStyle(viewMode === 'table')} onClick={() => setViewMode('table')}>☰ Table</button>
           <button style={btnStyle(viewMode === 'card')} onClick={() => setViewMode('card')}>⊞ Cards</button>
+          <button onClick={handleExport} style={{ padding: '8px 14px', border: '1px solid #DDE2E8', borderRadius: 6, background: '#fff', color: '#555', cursor: 'pointer', fontSize: 13 }} title="Export as CSV">⬇ Export CSV</button>
           {can('Vendors', 'Edit') && (
-            <button
-              onClick={() => navigate('/vendors/add')}
-              style={{ padding: '8px 18px', background: '#1C3C6E', color: '#fff', border: 'none', borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
-            >
-              + Add Vendor
-            </button>
+            <>
+              <button onClick={() => importRef.current?.click()} disabled={importing} style={{ padding: '8px 14px', border: '1px solid #DDE2E8', borderRadius: 6, background: '#fff', color: '#555', cursor: 'pointer', fontSize: 13 }} title="Import from CSV">⬆ {importing ? 'Importing...' : 'Import CSV'}</button>
+              <input ref={importRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={e => e.target.files[0] && handleImport(e.target.files[0])} />
+              <button onClick={() => navigate('/vendors/compare')} style={{ padding: '8px 14px', border: '1px solid #DDE2E8', borderRadius: 6, background: '#fff', color: '#1C3C6E', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>⚖ Compare</button>
+              <button
+                onClick={() => navigate('/vendors/add')}
+                style={{ padding: '8px 18px', background: '#1C3C6E', color: '#fff', border: 'none', borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+              >
+                + Add Vendor
+              </button>
+            </>
           )}
         </div>
       </div>
+
+      {importResult && (
+        <div style={{ background: importResult.error ? '#FFF5F5' : '#F0FFF4', border: `1px solid ${importResult.error ? '#FFCDD2' : '#C8E6C9'}`, borderRadius: 8, padding: '10px 16px', marginBottom: 12, fontSize: 13, color: importResult.error ? '#E74C3C' : '#27AE60', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{importResult.error ? `Import failed: ${importResult.error}` : `Import complete: ${importResult.imported} vendors added, ${importResult.skipped} skipped`}</span>
+          <button onClick={() => setImportResult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa' }}>✕</button>
+        </div>
+      )}
 
       {/* Count */}
       <div style={{ fontSize: 13, color: '#888', marginBottom: 12, paddingLeft: 4 }}>
@@ -106,7 +145,7 @@ export default function VendorList() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#F5F6FA' }}>
-                {['Vendor', 'Domains', 'Tier', 'Status', 'Type', 'Added', 'Actions'].map(h => (
+                {['Vendor', 'Domains', 'Tier', 'Status', 'Risk', 'Type', 'Added', 'Actions'].map(h => (
                   <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #E8ECF0' }}>{h}</th>
                 ))}
               </tr>
@@ -133,6 +172,9 @@ export default function VendorList() {
                   </td>
                   <td style={{ padding: '12px 16px' }}><TierBadge tier={v.tier} /></td>
                   <td style={{ padding: '12px 16px' }}><StatusBadge status={v.empanelment_status} /></td>
+                  <td style={{ padding: '12px 16px' }}>
+                    {v.risk_level && <span style={{ padding: '3px 9px', borderRadius: 12, fontSize: 11, fontWeight: 700, color: RISK_COLOR[v.risk_level], background: RISK_BG[v.risk_level] }}>{v.risk_level}</span>}
+                  </td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: '#555' }}>{v.vendor_type || '—'}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: '#888' }}>{v.added_date || '—'}</td>
                   <td style={{ padding: '12px 16px' }}>

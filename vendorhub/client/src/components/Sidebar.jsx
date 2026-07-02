@@ -5,6 +5,7 @@ import { AuthContext } from '../App.jsx';
 const NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: '⊞' },
   { path: '/vendors', label: 'Vendors', icon: '🏢' },
+  { path: '/vendors/compare', label: 'Compare Vendors', icon: '⚖' },
 ];
 
 const ADMIN_ITEMS = [
@@ -12,6 +13,7 @@ const ADMIN_ITEMS = [
   { path: '/admin/groups', label: 'Groups & Roles', icon: '🛡' },
   { path: '/admin/permissions', label: 'Permissions', icon: '🔑' },
   { path: '/admin/backup', label: 'Backup & Recovery', icon: '🗄' },
+  { path: '/admin/audit', label: 'Audit Log', icon: '📋' },
 ];
 
 export default function Sidebar() {
@@ -23,6 +25,7 @@ export default function Sidebar() {
 
   const isActive = (path) => {
     if (path === '/') return location.pathname === '/';
+    if (path === '/vendors') return location.pathname === '/vendors' || (location.pathname.startsWith('/vendors/') && !location.pathname.startsWith('/vendors/compare'));
     return location.pathname.startsWith(path);
   };
 

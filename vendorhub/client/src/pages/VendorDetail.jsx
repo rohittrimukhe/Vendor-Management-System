@@ -4,7 +4,7 @@ import Layout from '../components/Layout.jsx';
 import api from '../api.js';
 import { AuthContext } from '../App.jsx';
 
-const TABS = ['Overview', 'Contacts', 'Documents', 'Contracts & SLA', 'Performance', 'Escalation'];
+const TABS = ['Overview', 'Contacts', 'Documents', 'Contracts & SLA', 'Performance', 'Escalation', 'Notes'];
 
 const inputStyle = { width: '100%', padding: '9px 12px', border: '1px solid #DDE2E8', borderRadius: 6, fontSize: 13, outline: 'none' };
 const labelStyle = { display: 'block', fontSize: 12, fontWeight: 600, color: '#444', marginBottom: 4 };
@@ -53,6 +53,9 @@ export default function VendorDetail() {
   const [contracts, setContracts] = useState([]);
   const [performance, setPerformance] = useState({ reviews: [], averages: {} });
   const [escalation, setEscalation] = useState([]);
+  const [notes, setNotes] = useState([]);
+  const [newNote, setNewNote] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
 
   const [modal, setModal] = useState(null);
   const [modalData, setModalData] = useState({});
@@ -66,9 +69,10 @@ export default function VendorDetail() {
   const loadContracts = () => api.get(`/api/vendors/${id}/contracts`).then(setContracts).catch(() => {});
   const loadPerformance = () => api.get(`/api/vendors/${id}/performance`).then(setPerformance).catch(() => {});
   const loadEscalation = () => api.get(`/api/vendors/${id}/performance/escalation`).then(setEscalation).catch(() => {});
+  const loadNotes = () => api.get(`/api/vendors/${id}/notes`).then(setNotes).catch(() => {});
 
   useEffect(() => {
-    Promise.all([loadVendor(), loadContacts(), loadDocuments(), loadContracts(), loadPerformance(), loadEscalation()])
+    Promise.all([loadVendor(), loadContacts(), loadDocuments(), loadContracts(), loadPerformance(), loadEscalation(), loadNotes()])
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -167,6 +171,11 @@ export default function VendorDetail() {
           <div style={{ display: 'flex', justifyContent: 'center', gap: 6, flexWrap: 'wrap' }}>
             <StatusBadge status={vendor.empanelment_status} />
             <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, color: '#fff', background: '#29ABE2' }}>{vendor.tier}</span>
+            {vendor.risk_level && (() => {
+              const rc = { Low: '#27AE60', Medium: '#F39C12', High: '#E67E22', Critical: '#E74C3C' };
+              const rb = { Low: '#F0FFF4', Medium: '#FFFBF0', High: '#FFF3E0', Critical: '#FFF5F5' };
+              return <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, color: rc[vendor.risk_level], background: rb[vendor.risk_level] }}>⚡ {vendor.risk_level} Risk</span>;
+            })()}
           </div>
         </div>
         <div style={{ background: '#F8FAFC', borderRadius: 10, padding: 16 }}>
@@ -402,7 +411,73 @@ export default function VendorDetail() {
     </div>
   );
 
-  const tabContent = [renderOverview, renderContacts, renderDocuments, renderContracts, renderPerformance, renderEscalation];
+  const renderNotes = () => {
+    const addNote = async () => {
+      if (!newNote.trim()) return;
+      setSavingNote(true);
+      try {
+        await api.post(`/api/vendors/${id}/notes`, { content: newNote });
+        setNewNote('');
+        loadNotes();
+      } catch (e) { alert(e.message); }
+      setSavingNote(false);
+    };
+    const deleteNote = async (nid) => {
+      if (!window.confirm('Delete this note?')) return;
+      try { await api.delete(`/api/vendors/${id}/notes/${nid}`); loadNotes(); } catch (e) { alert(e.message); }
+    };
+    return (
+      <div>
+        {can('Vendors', 'Edit') && (
+          <div style={{ marginBottom: 20 }}>
+            <textarea
+              placeholder="Add an internal note... (only visible to your team)"
+              value={newNote}
+              onChange={e => setNewNote(e.target.value)}
+              style={{ width: '100%', padding: '10px 12px', border: '1px solid #DDE2E8', borderRadius: 8, fontSize: 14, resize: 'vertical', minHeight: 80, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+              <button
+                onClick={addNote}
+                disabled={savingNote || !newNote.trim()}
+                style={{ padding: '8px 20px', background: '#1C3C6E', color: '#fff', border: 'none', borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+              >
+                {savingNote ? 'Posting...' : 'Post Note'}
+              </button>
+            </div>
+          </div>
+        )}
+        {notes.length === 0 ? (
+          <div style={{ padding: 40, textAlign: 'center', color: '#aaa', fontSize: 14 }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>📝</div>
+            No notes yet. Use notes for internal comments, meeting summaries, and follow-ups.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {notes.map(n => (
+              <div key={n.id} style={{ background: '#FFFBF0', border: '1px solid #F0E6C0', borderRadius: 8, padding: '14px 16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#1C3C6E', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 700 }}>
+                      {n.created_by ? n.created_by[0].toUpperCase() : 'U'}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1C3C6E' }}>{n.created_by || 'Unknown'}</div>
+                      <div style={{ fontSize: 11, color: '#aaa' }}>{new Date(n.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                    </div>
+                  </div>
+                  <button onClick={() => deleteNote(n.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', fontSize: 14 }} title="Delete note">✕</button>
+                </div>
+                <p style={{ margin: 0, fontSize: 14, color: '#444', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{n.content}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const tabContent = [renderOverview, renderContacts, renderDocuments, renderContracts, renderPerformance, renderEscalation, renderNotes];
 
   const btnPrimary = { padding: '9px 20px', background: '#1C3C6E', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600 };
   const btnSecondary = { padding: '9px 18px', border: '1px solid #DDE2E8', borderRadius: 6, background: '#fff', cursor: 'pointer', fontSize: 14, color: '#555' };

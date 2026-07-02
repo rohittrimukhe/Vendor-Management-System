@@ -161,6 +161,16 @@ const migrations = [
     ip_address TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`,
+  `CREATE TABLE IF NOT EXISTS vendor_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vendor_id INTEGER REFERENCES vendors(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    created_by TEXT,
+    created_by_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `ALTER TABLE vendors ADD COLUMN risk_score INTEGER DEFAULT 0`,
+  `ALTER TABLE vendors ADD COLUMN risk_level TEXT DEFAULT 'Low'`,
 ];
 
 for (const sql of migrations) {

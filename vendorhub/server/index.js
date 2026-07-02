@@ -50,6 +50,9 @@ app.use('/api/groups', require('./routes/groups'));
 app.use('/api/backup', require('./routes/backup'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/permissions', require('./routes/permissions'));
+app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/audit', require('./routes/auditlog'));
+app.use('/api/vendors/:vendorId/notes', require('./routes/notes'));
 
 // Dashboard stats
 app.get('/api/dashboard/stats', require('./middleware/auth'), (req, res) => {
@@ -57,10 +60,15 @@ app.get('/api/dashboard/stats', require('./middleware/auth'), (req, res) => {
   const total = db.prepare('SELECT COUNT(*) as c FROM vendors').get().c;
   const empanelled = db.prepare("SELECT COUNT(*) as c FROM vendors WHERE empanelment_status='Empanelled'").get().c;
   const inEval = db.prepare("SELECT COUNT(*) as c FROM vendors WHERE empanelment_status='In Evaluation'").get().c;
+  const onHold = db.prepare("SELECT COUNT(*) as c FROM vendors WHERE empanelment_status='On Hold'").get().c;
+  const archived = db.prepare("SELECT COUNT(*) as c FROM vendors WHERE empanelment_status='Archived'").get().c;
   const expiring = db.prepare("SELECT COUNT(*) as c FROM contracts WHERE end_date BETWEEN date('now') AND date('now', '+90 days') AND status='Active'").get().c;
+  const totalSpend = db.prepare("SELECT COALESCE(SUM(value),0) as s FROM contracts WHERE status='Active'").get().s;
   const recentVendors = db.prepare('SELECT id, name, logo_initial, logo_color, empanelment_status, created_at FROM vendors ORDER BY created_at DESC LIMIT 5').all();
   const domains = db.prepare('SELECT domain, COUNT(*) as count FROM vendor_domains GROUP BY domain ORDER BY count DESC LIMIT 10').all();
-  res.json({ data: { total, empanelled, inEval, expiring, recentVendors, domains } });
+  const tierDist = db.prepare("SELECT tier, COUNT(*) as count FROM vendors GROUP BY tier").all();
+  const topSpend = db.prepare("SELECT v.id, v.name, v.logo_initial, v.logo_color, COALESCE(SUM(c.value),0) as total FROM vendors v LEFT JOIN contracts c ON c.vendor_id=v.id GROUP BY v.id ORDER BY total DESC LIMIT 5").all();
+  res.json({ data: { total, empanelled, inEval, onHold, archived, expiring, totalSpend, recentVendors, domains, tierDist, topSpend } });
 });
 
 // Static files

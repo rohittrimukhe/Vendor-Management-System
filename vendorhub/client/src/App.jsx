@@ -13,6 +13,8 @@ import Groups from './pages/Groups.jsx';
 import Permissions from './pages/Permissions.jsx';
 import Backup from './pages/Backup.jsx';
 import Help from './pages/Help.jsx';
+import AuditLog from './pages/AuditLog.jsx';
+import VendorCompare from './pages/VendorCompare.jsx';
 
 export const AuthContext = createContext(null);
 
