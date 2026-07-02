@@ -14,12 +14,49 @@ const ROOT_DIR = path.resolve(__dirname, '..', '..', '..');  // /Vendor-Manageme
 const APP_DIR  = path.resolve(__dirname, '..', '..');        // /vendorhub
 const PKG      = require('../../package.json');
 const GITHUB_REPO = 'rohittrimukhe/Vendor-Management-System';
+const IS_WIN   = process.platform === 'win32';
+
+// ─── Locate git executable (handles Windows services where PATH is stripped) ──
+
+function findGit() {
+  // Common Windows Git installation paths
+  const WIN_PATHS = [
+    'C:\\Program Files\\Git\\cmd\\git.exe',
+    'C:\\Program Files\\Git\\bin\\git.exe',
+    'C:\\Program Files (x86)\\Git\\cmd\\git.exe',
+    'C:\\Program Files (x86)\\Git\\bin\\git.exe',
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Git', 'cmd', 'git.exe'),
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Git', 'bin', 'git.exe'),
+    path.join(process.env.ProgramFiles || '', 'Git', 'cmd', 'git.exe'),
+    path.join(process.env['ProgramFiles(x86)'] || '', 'Git', 'cmd', 'git.exe'),
+  ];
+
+  if (IS_WIN) {
+    // Check PATH entries first
+    const pathDirs = (process.env.PATH || '').split(';');
+    for (const dir of pathDirs) {
+      const candidate = path.join(dir.trim(), 'git.exe');
+      try { if (fs.existsSync(candidate)) return `"${candidate}"`; } catch {}
+    }
+    // Fall back to known locations
+    for (const p of WIN_PATHS) {
+      try { if (p && fs.existsSync(p)) return `"${p}"`; } catch {}
+    }
+    return 'git'; // last resort
+  }
+
+  return 'git'; // Linux/Mac — always in PATH
+}
+
+const GIT = findGit();
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 function run(cmd, cwd) {
+  // Replace bare 'git' with the resolved path
+  const resolved = cmd.replace(/^git\b/, GIT);
   return new Promise((resolve, reject) => {
-    exec(cmd, { cwd: cwd || ROOT_DIR, maxBuffer: 5 * 1024 * 1024, timeout: 120000 }, (err, stdout, stderr) => {
+    exec(resolved, { cwd: cwd || ROOT_DIR, maxBuffer: 5 * 1024 * 1024, timeout: 120000 }, (err, stdout, stderr) => {
       if (err) reject(new Error(stderr || err.message));
       else resolve(stdout.trim());
     });
@@ -52,7 +89,7 @@ router.get('/current', async (req, res) => {
   try {
     const sha = await run('git rev-parse HEAD');
     const shortSha = sha.slice(0, 7);
-    const logLine = await run(`git log -1 --format="%s|||%ai|||%an" HEAD`);
+    const logLine = await run('git log -1 --format=%s|||%ai|||%an HEAD');
     const [message, date, author] = logLine.split('|||');
     const branch = await run('git rev-parse --abbrev-ref HEAD');
     const remote = await run('git remote get-url origin').catch(() => '');
@@ -66,9 +103,18 @@ router.get('/current', async (req, res) => {
       author: author?.trim(),
       branch: branch?.trim(),
       remote: remote?.trim(),
+      gitPath: GIT,
+      platform: process.platform,
     }});
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    // Git not found or not a git repo
+    res.json({ data: {
+      version: PKG.version,
+      sha: null,
+      gitPath: GIT,
+      platform: process.platform,
+      gitError: e.message,
+    }});
   }
 });
 
@@ -85,7 +131,13 @@ router.get('/check', async (req, res) => {
     const remoteBranch = await run('git remote show origin').then(out => {
       const m = out.match(/HEAD branch:\s*(\S+)/);
       return m ? m[1] : 'main';
-    }).catch(() => 'main');
+    }).catch(async () => {
+      // Fallback: check if main or master exists on remote
+      const refs = await run('git branch -r').catch(() => '');
+      if (refs.includes('origin/main')) return 'main';
+      if (refs.includes('origin/master')) return 'master';
+      return 'main';
+    });
 
     // 4. Get remote HEAD SHA
     const remoteSha = await run(`git rev-parse origin/${remoteBranch}`).catch(() => null);
