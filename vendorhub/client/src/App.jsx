@@ -18,6 +18,8 @@ import VendorCompare from './pages/VendorCompare.jsx';
 import SpendAnalytics from './pages/SpendAnalytics.jsx';
 import MyTasks from './pages/MyTasks.jsx';
 import ScoringCriteria from './pages/ScoringCriteria.jsx';
+import CustomFields from './pages/CustomFields.jsx';
+import Approvals from './pages/Approvals.jsx';
 
 export const AuthContext = createContext(null);
 
@@ -93,6 +95,8 @@ function AppRoutes() {
         <Route path="/admin/backup" element={<AdminRoute><Backup /></AdminRoute>} />
         <Route path="/admin/audit" element={<AdminRoute><AuditLog /></AdminRoute>} />
         <Route path="/admin/scoring" element={<AdminRoute><ScoringCriteria /></AdminRoute>} />
+        <Route path="/admin/custom-fields" element={<AdminRoute><CustomFields /></AdminRoute>} />
+        <Route path="/approvals" element={<ProtectedRoute><Approvals /></ProtectedRoute>} />
         <Route path="/help" element={<ProtectedRoute><Help /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

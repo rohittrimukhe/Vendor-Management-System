@@ -57,6 +57,34 @@ app.use('/api/vendors/:vendorId/tasks', require('./routes/tasks'));
 app.use('/api/tasks', require('./routes/mytasks'));
 app.use('/api/scoring', require('./routes/scoring'));
 app.use('/api/analytics', require('./routes/analytics'));
+app.use('/api/vendors/:vendorId/onboarding', require('./routes/onboarding'));
+app.use('/api/vendors/:vendorId/timeline', require('./routes/timeline'));
+app.use('/api/custom-fields', require('./routes/customfields'));
+
+// Pending approvals for current user's direct reports
+app.get('/api/approvals/pending', require('./middleware/auth'), (req, res) => {
+  const { db } = require('./db');
+  const userId = req.session.userId;
+  // Vendors where I am the approval reviewer and status is pending
+  const pendingForMe = db.prepare(`
+    SELECT v.id, v.name, v.logo_initial, v.logo_color, v.empanelment_status, v.tier, v.approval_status,
+           v.created_at, u.name as requester_name, u.username as requester_username
+    FROM vendors v
+    LEFT JOIN users u ON u.id = v.approval_requested_by
+    WHERE v.approval_reviewer_id = ? AND v.approval_status = 'pending_review'
+    ORDER BY v.created_at DESC
+  `).all(userId);
+  // My own vendors pending approval
+  const myPending = db.prepare(`
+    SELECT v.id, v.name, v.logo_initial, v.logo_color, v.empanelment_status, v.tier, v.approval_status,
+           v.created_at, u.name as reviewer_name, u.username as reviewer_username
+    FROM vendors v
+    LEFT JOIN users u ON u.id = v.approval_reviewer_id
+    WHERE v.approval_requested_by = ? AND v.approval_status IN ('pending_review', 'rejected')
+    ORDER BY v.created_at DESC
+  `).all(userId);
+  res.json({ data: { pendingForMe, myPending } });
+});
 
 // Dashboard stats
 app.get('/api/dashboard/stats', require('./middleware/auth'), (req, res) => {

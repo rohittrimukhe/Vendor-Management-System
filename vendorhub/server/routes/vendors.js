@@ -54,6 +54,8 @@ function computeRisk(vendorId) {
 router.get('/', requirePermission('Vendors', 'Read'), (req, res) => {
   try {
     const { q, status, tier, type, domain } = req.query;
+    const userId = req.session.userId;
+    const isAdmin = (() => { const u = db.prepare('SELECT group_id FROM users WHERE id=?').get(userId); return u?.group_id === 1; })();
     let sql = 'SELECT v.* FROM vendors v';
     const params = [];
 
@@ -70,6 +72,14 @@ router.get('/', requirePermission('Vendors', 'Read'), (req, res) => {
     if (status) { conditions.push('v.empanelment_status = ?'); params.push(status); }
     if (tier) { conditions.push('v.tier = ?'); params.push(tier); }
     if (type) { conditions.push('v.vendor_type = ?'); params.push(type); }
+    // Visibility filter: non-admins can only see vendors they have access to
+    if (!isAdmin) {
+      conditions.push(`(v.visibility = 'everyone' OR v.visibility IS NULL OR EXISTS (SELECT 1 FROM vendor_visibility_users vvu WHERE vvu.vendor_id = v.id AND vvu.user_id = ?))`);
+      params.push(userId);
+      // Also filter by approval: hide pending/rejected vendors unless user submitted them or is the reviewer
+      conditions.push(`(v.approval_status IS NULL OR v.approval_status = 'approved' OR v.approval_requested_by = ? OR v.approval_reviewer_id = ?)`);
+      params.push(userId, userId);
+    }
 
     if (conditions.length) sql += ' WHERE ' + conditions.join(' AND ');
     sql += ' ORDER BY v.created_at DESC';
@@ -201,15 +211,19 @@ router.post('/', requirePermission('Vendors', 'Edit'), auditLog('Vendor', 'CREAT
     const initial = name.charAt(0).toUpperCase();
     const color = COLORS[Math.floor(Math.random() * COLORS.length)];
 
-    const user = db.prepare('SELECT username FROM users WHERE id = ?').get(req.session.userId);
+    const user = db.prepare('SELECT id, username, reporting_manager_id FROM users WHERE id = ?').get(req.session.userId);
+    const isAdmin = user?.group_id === 1 || (() => { const u = db.prepare('SELECT group_id FROM users WHERE id=?').get(req.session.userId); return u?.group_id === 1; })();
     const today = new Date().toISOString().split('T')[0];
+    // If user has a reporting manager, send for approval
+    const approvalStatus = (!isAdmin && user?.reporting_manager_id) ? 'pending_review' : 'approved';
+    const reviewerId = user?.reporting_manager_id || null;
 
     const result = db.prepare(`
-      INSERT INTO vendors (name, gstin, website, address, geo_scope, empanelment_status, tier, vendor_type, summary, logo_initial, logo_color, added_by, added_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO vendors (name, gstin, website, address, geo_scope, empanelment_status, tier, vendor_type, summary, logo_initial, logo_color, added_by, added_date, approval_status, approval_requested_by, approval_reviewer_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(name, gstin || null, website || null, address || null, geo_scope || null,
       empanelment_status || 'In Evaluation', tier || 'Tier 2', vendor_type || null,
-      summary || null, initial, color, user ? user.username : 'admin', today);
+      summary || null, initial, color, user ? user.username : 'admin', today, approvalStatus, user?.id || null, reviewerId);
 
     const vendorId = result.lastInsertRowid;
 
@@ -372,6 +386,88 @@ router.get('/stats/dashboard', (req, res) => {
     console.error(err);
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─── Vendor Visibility ───────────────────────────────────────────────────────
+
+// Get visibility settings for a vendor
+router.get('/:id/visibility', requirePermission('Vendors', 'Read'), (req, res) => {
+  const vendor = db.prepare('SELECT id, visibility FROM vendors WHERE id = ?').get(req.params.id);
+  if (!vendor) return res.status(404).json({ error: 'Not found' });
+  const users = db.prepare(`
+    SELECT u.id, u.name, u.username, u.email FROM vendor_visibility_users vvu
+    JOIN users u ON u.id = vvu.user_id WHERE vvu.vendor_id = ?
+  `).all(req.params.id);
+  res.json({ data: { visibility: vendor.visibility || 'everyone', users } });
+});
+
+// Update visibility settings (admin only)
+router.put('/:id/visibility', requirePermission('Vendors', 'Full'), (req, res) => {
+  const { visibility, userIds } = req.body;
+  if (!['everyone', 'selected'].includes(visibility)) return res.status(400).json({ error: 'Invalid visibility' });
+  db.prepare('UPDATE vendors SET visibility=? WHERE id=?').run(visibility, req.params.id);
+  db.prepare('DELETE FROM vendor_visibility_users WHERE vendor_id=?').run(req.params.id);
+  if (visibility === 'selected' && Array.isArray(userIds)) {
+    const ins = db.prepare('INSERT OR IGNORE INTO vendor_visibility_users (vendor_id, user_id) VALUES (?, ?)');
+    db.transaction(() => { userIds.forEach(uid => ins.run(req.params.id, uid)); })();
+  }
+  res.json({ data: { success: true } });
+});
+
+// ─── Vendor Approval Workflow ─────────────────────────────────────────────────
+
+// Get approval status + notes
+router.get('/:id/approval', requirePermission('Vendors', 'Read'), (req, res) => {
+  const vendor = db.prepare(`
+    SELECT v.id, v.name, v.approval_status, v.approval_requested_by, v.approval_reviewer_id,
+           u1.name as requester_name, u1.username as requester_username,
+           u2.name as reviewer_name, u2.username as reviewer_username
+    FROM vendors v
+    LEFT JOIN users u1 ON u1.id = v.approval_requested_by
+    LEFT JOIN users u2 ON u2.id = v.approval_reviewer_id
+    WHERE v.id = ?
+  `).get(req.params.id);
+  if (!vendor) return res.status(404).json({ error: 'Not found' });
+  const notes = db.prepare('SELECT van.*, u.name as user_name FROM vendor_approval_notes van LEFT JOIN users u ON u.id = van.user_id WHERE van.vendor_id = ? ORDER BY van.created_at ASC').all(req.params.id);
+  res.json({ data: { ...vendor, notes } });
+});
+
+// Submit for approval
+router.post('/:id/approval/submit', requirePermission('Vendors', 'Edit'), (req, res) => {
+  const user = db.prepare('SELECT id, username, reporting_manager_id FROM users WHERE id = ?').get(req.session.userId);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  const reviewer_id = user.reporting_manager_id || null;
+  db.prepare('UPDATE vendors SET approval_status=?, approval_requested_by=?, approval_reviewer_id=? WHERE id=?')
+    .run('pending_review', user.id, reviewer_id, req.params.id);
+  if (req.body.note) {
+    db.prepare('INSERT INTO vendor_approval_notes (vendor_id, user_id, username, role, note) VALUES (?, ?, ?, ?, ?)')
+      .run(req.params.id, user.id, user.username, 'requester', req.body.note);
+  }
+  res.json({ data: { success: true } });
+});
+
+// Approve / Reject (reviewer / admin)
+router.post('/:id/approval/review', requirePermission('Vendors', 'Edit'), (req, res) => {
+  const { action, note } = req.body;
+  if (!['approve', 'reject'].includes(action)) return res.status(400).json({ error: 'action must be approve or reject' });
+  const user = db.prepare('SELECT id, username FROM users WHERE id = ?').get(req.session.userId);
+  const status = action === 'approve' ? 'approved' : 'rejected';
+  db.prepare('UPDATE vendors SET approval_status=? WHERE id=?').run(status, req.params.id);
+  if (note) {
+    db.prepare('INSERT INTO vendor_approval_notes (vendor_id, user_id, username, role, note) VALUES (?, ?, ?, ?, ?)')
+      .run(req.params.id, user.id, user.username, 'reviewer', note);
+  }
+  res.json({ data: { success: true, status } });
+});
+
+// Add note to approval thread
+router.post('/:id/approval/note', requirePermission('Vendors', 'Read'), (req, res) => {
+  const { note } = req.body;
+  if (!note?.trim()) return res.status(400).json({ error: 'Note required' });
+  const user = db.prepare('SELECT id, username FROM users WHERE id = ?').get(req.session.userId);
+  const r = db.prepare('INSERT INTO vendor_approval_notes (vendor_id, user_id, username, role, note) VALUES (?, ?, ?, ?, ?)')
+    .run(req.params.id, user.id, user.username, 'comment', note.trim());
+  res.status(201).json({ data: db.prepare('SELECT * FROM vendor_approval_notes WHERE id=?').get(r.lastInsertRowid) });
 });
 
 module.exports = router;
