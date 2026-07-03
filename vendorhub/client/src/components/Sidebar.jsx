@@ -1,6 +1,6 @@
 import React, { useContext, useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { AuthContext } from '../App.jsx';
+import { AuthContext, ThemeContext } from '../App.jsx';
 import api from '../api.js';
 
 const NAV_ITEMS = [
@@ -21,12 +21,14 @@ const ADMIN_ITEMS = [
   { path: '/admin/scoring', label: 'Scoring Criteria', icon: '📊' },
   { path: '/admin/custom-fields', label: 'Custom Fields', icon: '🧩' },
   { path: '/admin/update', label: 'System Update', icon: '🔄' },
+  { path: '/admin/settings', label: 'Settings', icon: '⚙️' },
 ];
 
 export default function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
   const auth = useContext(AuthContext);
+  const { dark, toggleDark } = useContext(ThemeContext);
   const isAdmin = auth?.isAdmin || false;
   const user = auth?.user;
   const [pendingApprovals, setPendingApprovals] = useState(0);
@@ -140,7 +142,12 @@ export default function Sidebar() {
               <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>{isAdmin ? 'System Administrator' : (user.group?.name || 'User')}</div>
             </div>
           </div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>VendorHub v1.0.0</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>VendorHub v1.0.0</div>
+            <button onClick={toggleDark} title={dark ? 'Switch to Light Mode' : 'Switch to Dark Mode'} style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 20, padding: '3px 10px', cursor: 'pointer', fontSize: 14, color: '#fff', lineHeight: 1 }}>
+              {dark ? '☀️' : '🌙'}
+            </button>
+          </div>
         </div>
       )}
     </div>

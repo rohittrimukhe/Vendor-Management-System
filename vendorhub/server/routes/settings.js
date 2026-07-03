@@ -30,4 +30,23 @@ router.put('/bulk', requireAdmin, (req, res) => {
   res.json({ data: { success: true } });
 });
 
+router.post('/test-email', requireAdmin, async (req, res) => {
+  try {
+    const nodemailer = require('nodemailer');
+    const getSetting = (key) => db.prepare("SELECT value FROM settings WHERE key=?").get(key)?.value;
+    const host = getSetting('smtp_host');
+    const port = parseInt(getSetting('smtp_port') || '587');
+    const user = getSetting('smtp_user');
+    const pass = getSetting('smtp_pass');
+    const from = getSetting('smtp_from') || user;
+    const to = req.body.to || from;
+    if (!host || !user || !pass) return res.status(400).json({ error: 'SMTP not configured. Set smtp_host, smtp_user, smtp_pass in settings.' });
+    const transporter = nodemailer.createTransport({ host, port, secure: port === 465, auth: { user, pass } });
+    await transporter.sendMail({ from, to, subject: 'VendorHub Test Email', text: 'This is a test email from VendorHub. Your SMTP configuration is working correctly!' });
+    res.json({ data: { sent: true, to } });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;

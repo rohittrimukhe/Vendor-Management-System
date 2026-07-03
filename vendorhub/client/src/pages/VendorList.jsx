@@ -39,6 +39,9 @@ export default function VendorList() {
   const [bulkAction, setBulkAction] = useState('');
   const [bulkValue, setBulkValue] = useState('');
   const [bulkConfirm, setBulkConfirm] = useState(false);
+  const [savedViews, setSavedViews] = useState(() => { try { return JSON.parse(localStorage.getItem('vendorhub_saved_views') || '[]'); } catch { return []; } });
+  const [saveViewName, setSaveViewName] = useState('');
+  const [showSaveView, setShowSaveView] = useState(false);
 
   const loadVendors = async () => {
     setLoading(true);
@@ -80,6 +83,26 @@ export default function VendorList() {
 
   const handleExport = () => {
     window.open('/api/vendors/export', '_blank');
+  };
+
+  const hasActiveFilter = search || filterStatus || filterTier || filterType || filterExpiring;
+
+  const saveView = () => {
+    if (!saveViewName.trim()) return;
+    const view = { name: saveViewName.trim(), search, filterStatus, filterTier, filterType, filterExpiring };
+    const updated = [...savedViews.filter(v => v.name !== view.name), view].slice(-10);
+    setSavedViews(updated);
+    localStorage.setItem('vendorhub_saved_views', JSON.stringify(updated));
+    setSaveViewName('');
+    setShowSaveView(false);
+  };
+
+  const applyView = (v) => { setSearch(v.search || ''); setFilterStatus(v.filterStatus || ''); setFilterTier(v.filterTier || ''); setFilterType(v.filterType || ''); setFilterExpiring(!!v.filterExpiring); };
+
+  const deleteView = (name) => {
+    const updated = savedViews.filter(v => v.name !== name);
+    setSavedViews(updated);
+    localStorage.setItem('vendorhub_saved_views', JSON.stringify(updated));
   };
 
   const handleImport = async (file) => {
@@ -127,6 +150,9 @@ export default function VendorList() {
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
           <button style={btnStyle(viewMode === 'table')} onClick={() => setViewMode('table')}>☰ Table</button>
           <button style={btnStyle(viewMode === 'card')} onClick={() => setViewMode('card')}>⊞ Cards</button>
+          {hasActiveFilter && (
+            <button onClick={() => setShowSaveView(s => !s)} style={{ padding: '8px 12px', border: '1px solid #29ABE2', borderRadius: 6, background: showSaveView ? '#EEF9FF' : '#fff', color: '#29ABE2', cursor: 'pointer', fontSize: 13 }} title="Save current filters as a view">💾 Save View</button>
+          )}
           <button onClick={handleExport} style={{ padding: '8px 14px', border: '1px solid #DDE2E8', borderRadius: 6, background: '#fff', color: '#555', cursor: 'pointer', fontSize: 13 }} title="Export as CSV">⬇ Export CSV</button>
           {can('Vendors', 'Edit') && (
             <>
@@ -182,6 +208,36 @@ export default function VendorList() {
           <button onClick={() => { setSelected([]); setBulkAction(''); setBulkValue(''); }} style={{ padding: '7px 14px', background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 6, fontSize: 13, cursor: 'pointer' }}>
             Cancel
           </button>
+        </div>
+      )}
+
+      {/* Save View panel */}
+      {showSaveView && (
+        <div style={{ background: '#EEF9FF', borderRadius: 8, padding: '10px 14px', marginBottom: 10, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 13, color: '#29ABE2', fontWeight: 600 }}>Name this view:</span>
+          <input
+            style={{ padding: '6px 10px', border: '1px solid #29ABE2', borderRadius: 5, fontSize: 13, outline: 'none', width: 180 }}
+            placeholder="e.g. Tier 1 Empanelled"
+            value={saveViewName}
+            onChange={e => setSaveViewName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && saveView()}
+            autoFocus
+          />
+          <button onClick={saveView} disabled={!saveViewName.trim()} style={{ padding: '6px 14px', background: '#29ABE2', color: '#fff', border: 'none', borderRadius: 5, fontSize: 13, cursor: 'pointer' }}>Save</button>
+          <button onClick={() => setShowSaveView(false)} style={{ padding: '6px 10px', background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: 13 }}>Cancel</button>
+        </div>
+      )}
+
+      {/* Saved view chips */}
+      {savedViews.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: '#aaa', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Saved:</span>
+          {savedViews.map(v => (
+            <div key={v.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#F0F4FF', border: '1px solid #DDE2E8', borderRadius: 20, padding: '4px 12px 4px 10px', fontSize: 12 }}>
+              <span style={{ cursor: 'pointer', color: '#1C3C6E', fontWeight: 500 }} onClick={() => applyView(v)}>{v.name}</span>
+              <span style={{ cursor: 'pointer', color: '#aaa', fontSize: 14, lineHeight: 1 }} onClick={() => deleteView(v.name)}>✕</span>
+            </div>
+          ))}
         </div>
       )}
 

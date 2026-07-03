@@ -957,7 +957,12 @@ export default function VendorDetail() {
 
   return (
     <Layout title={vendor.name}>
-      <button onClick={() => navigate('/vendors')} style={{ ...btnSecondary, marginBottom: 16 }}>← Back to Vendors</button>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center' }}>
+        <button onClick={() => navigate('/vendors')} style={btnSecondary}>← Back to Vendors</button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <a href={`/api/vendors/${id}/pdf`} target="_blank" rel="noreferrer" style={{ padding: '9px 18px', border: '1px solid #DDE2E8', borderRadius: 6, background: '#fff', color: '#555', fontSize: 14, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>📄 Download PDF</a>
+        </div>
+      </div>
 
       <div style={{ background: '#fff', borderRadius: 10, boxShadow: '0 2px 8px rgba(0,0,0,0.05)', marginBottom: 20, overflow: 'hidden' }}>
         <div style={{ display: 'flex', borderBottom: '1px solid #E8ECF0', overflowX: 'auto' }}>
