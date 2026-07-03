@@ -2,6 +2,8 @@ import React, { useState, useEffect, createContext, useContext } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import api from './api.js';
 
+export const ThemeContext = createContext({ dark: false, toggleDark: () => {} });
+
 import SetupWizard from './pages/SetupWizard.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
@@ -21,6 +23,7 @@ import ScoringCriteria from './pages/ScoringCriteria.jsx';
 import CustomFields from './pages/CustomFields.jsx';
 import Approvals from './pages/Approvals.jsx';
 import SystemUpdate from './pages/SystemUpdate.jsx';
+import Settings from './pages/Settings.jsx';
 
 export const AuthContext = createContext(null);
 
@@ -99,6 +102,7 @@ function AppRoutes() {
         <Route path="/admin/custom-fields" element={<AdminRoute><CustomFields /></AdminRoute>} />
         <Route path="/approvals" element={<ProtectedRoute><Approvals /></ProtectedRoute>} />
         <Route path="/admin/update" element={<AdminRoute><SystemUpdate /></AdminRoute>} />
+        <Route path="/admin/settings" element={<AdminRoute><Settings /></AdminRoute>} />
         <Route path="/help" element={<ProtectedRoute><Help /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
@@ -107,9 +111,13 @@ function AppRoutes() {
 }
 
 export default function App() {
+  const [dark, setDark] = useState(() => localStorage.getItem('vendorhub_dark') === 'true');
+  const toggleDark = () => { const next = !dark; setDark(next); localStorage.setItem('vendorhub_dark', String(next)); };
   return (
-    <BrowserRouter>
-      <AppRoutes />
-    </BrowserRouter>
+    <ThemeContext.Provider value={{ dark, toggleDark }}>
+      <BrowserRouter>
+        <AppRoutes />
+      </BrowserRouter>
+    </ThemeContext.Provider>
   );
 }

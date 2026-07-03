@@ -61,6 +61,7 @@ app.use('/api/vendors/:vendorId/onboarding', require('./routes/onboarding'));
 app.use('/api/vendors/:vendorId/timeline', require('./routes/timeline'));
 app.use('/api/custom-fields', require('./routes/customfields'));
 app.use('/api/update', require('./routes/update'));
+app.use('/api/vendors', require('./routes/vendorpdf'));
 
 // Pending approvals for current user's direct reports
 app.get('/api/approvals/pending', require('./middleware/auth'), (req, res) => {
@@ -153,10 +154,76 @@ function scheduleBackups() {
   });
 }
 
+function scheduleEmailAlerts() {
+  cron.schedule('0 8 * * *', async () => {
+    try {
+      const getSetting = (key) => db.prepare("SELECT value FROM settings WHERE key=?").get(key)?.value;
+      if (getSetting('smtp_enabled') !== 'true') return;
+      const host = getSetting('smtp_host');
+      const port = parseInt(getSetting('smtp_port') || '587');
+      const user = getSetting('smtp_user');
+      const pass = getSetting('smtp_pass');
+      const from = getSetting('smtp_from') || user;
+      if (!host || !user || !pass) return;
+
+      const adminEmails = db.prepare("SELECT email FROM users WHERE group_id = 1 AND email IS NOT NULL AND email != ''").all().map(r => r.email);
+      const extraEmail = getSetting('admin_email');
+      if (extraEmail && !adminEmails.includes(extraEmail)) adminEmails.push(extraEmail);
+      if (!adminEmails.length) return;
+
+      const nodemailer = require('nodemailer');
+      const transporter = nodemailer.createTransport({ host, port, secure: port === 465, auth: { user, pass } });
+
+      const expiringContracts = db.prepare(`
+        SELECT c.*, v.name as vendor_name FROM contracts c
+        JOIN vendors v ON v.id = c.vendor_id
+        WHERE c.status = 'Active' AND c.end_date BETWEEN date('now') AND date('now', '+30 days')
+        ORDER BY c.end_date
+      `).all();
+
+      const expiringCerts = db.prepare(`
+        SELECT ce.*, v.name as vendor_name FROM certifications ce
+        JOIN vendors v ON v.id = ce.vendor_id
+        WHERE ce.expiry BETWEEN date('now') AND date('now', '+30 days')
+        ORDER BY ce.expiry
+      `).all();
+
+      if (!expiringContracts.length && !expiringCerts.length) return;
+
+      let html = '<h2 style="color:#1C3C6E">VendorHub — Expiry Alerts</h2>';
+      if (expiringContracts.length) {
+        html += `<h3 style="color:#E74C3C">⚠ Contracts Expiring in 30 Days (${expiringContracts.length})</h3><table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%"><tr><th>Vendor</th><th>Type</th><th>End Date</th><th>Value</th></tr>`;
+        expiringContracts.forEach(c => {
+          html += `<tr><td>${c.vendor_name}</td><td>${c.type || '—'}</td><td>${c.end_date}</td><td>${c.value ? '₹' + Number(c.value).toLocaleString() : '—'}</td></tr>`;
+        });
+        html += '</table>';
+      }
+      if (expiringCerts.length) {
+        html += `<h3 style="color:#E67E22">⚠ Certifications Expiring in 30 Days (${expiringCerts.length})</h3><table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%"><tr><th>Vendor</th><th>Certification</th><th>Expiry</th></tr>`;
+        expiringCerts.forEach(c => {
+          html += `<tr><td>${c.vendor_name}</td><td>${c.name || '—'}</td><td>${c.expiry}</td></tr>`;
+        });
+        html += '</table>';
+      }
+      html += '<p style="color:#888;font-size:12px;margin-top:20px">This is an automated alert from VendorHub.</p>';
+
+      await transporter.sendMail({
+        from, to: adminEmails.join(', '),
+        subject: `VendorHub Alert: ${expiringContracts.length + expiringCerts.length} items expiring soon`,
+        html,
+      });
+      console.log(`[VendorHub] Email alerts sent to ${adminEmails.join(', ')}`);
+    } catch (err) {
+      console.error('[VendorHub] Email alert failed:', err.message);
+    }
+  });
+}
+
 app.listen(PORT, () => {
   console.log(`[VendorHub] Server running on http://localhost:${PORT}`);
   console.log(`[VendorHub] First run: ${isFirstRun()}`);
   try { scheduleBackups(); } catch {}
+  try { scheduleEmailAlerts(); } catch {}
 });
 
 module.exports = app;
