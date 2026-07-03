@@ -14,9 +14,33 @@ router.use(requireAdmin);
 
 const ROOT_DIR = path.resolve(__dirname, '..', '..', '..');  // repo root
 const APP_DIR  = path.resolve(__dirname, '..', '..');        // vendorhub/
-const PKG      = require('../../package.json');
+const DATA_DIR = path.join(APP_DIR, 'data');
+const SHA_FILE = path.join(DATA_DIR, 'installed_sha.txt');
+const PKG_FILE = path.join(APP_DIR, 'package.json');
 const GITHUB_REPO = 'rohittrimukhe/Vendor-Management-System';
 const IS_WIN   = process.platform === 'win32';
+
+function getPkg() { try { return JSON.parse(fs.readFileSync(PKG_FILE, 'utf8')); } catch { return { version: '1.0.0' }; } }
+
+// Read/write the SHA of the last successfully installed version
+function getInstalledSha() {
+  try { return fs.readFileSync(SHA_FILE, 'utf8').trim().slice(0, 7); } catch { return null; }
+}
+function saveInstalledSha(sha) {
+  try { fs.mkdirSync(DATA_DIR, { recursive: true }); fs.writeFileSync(SHA_FILE, sha.slice(0, 7)); } catch {}
+}
+
+// Bump patch version in package.json and return new version string
+function bumpVersion() {
+  try {
+    const pkg = getPkg();
+    const parts = (pkg.version || '1.0.0').split('.').map(Number);
+    parts[2] = (parts[2] || 0) + 1;
+    pkg.version = parts.join('.');
+    fs.writeFileSync(PKG_FILE, JSON.stringify(pkg, null, 2) + '\n');
+    return pkg.version;
+  } catch { return null; }
+}
 
 // ─── Detect Node / npm paths ──────────────────────────────────────────────────
 
@@ -109,20 +133,22 @@ async function httpsJSON(urlStr) {
 
 // ─── GET /api/update/current ──────────────────────────────────────────────────
 router.get('/current', async (req, res) => {
+  const pkg = getPkg();
   let gitInfo = null;
   try {
-    // Try git if available
     const sha = await run('git rev-parse HEAD', ROOT_DIR);
     const logLine = await run('git log -1 --format=%s|||%ai|||%an HEAD', ROOT_DIR);
     const [message, date, author] = logLine.split('|||');
     const branch = await run('git rev-parse --abbrev-ref HEAD', ROOT_DIR);
     gitInfo = { sha: sha.slice(0, 7), fullSha: sha, message: message?.trim(), date: date?.trim(), author: author?.trim(), branch: branch?.trim() };
-  } catch {
-    // git not installed — that's OK, we use ZIP method
-  }
+  } catch {}
+
+  // Fall back to saved SHA if git not available
+  const installedSha = gitInfo?.sha || getInstalledSha();
 
   res.json({ data: {
-    version: PKG.version,
+    version: pkg.version,
+    sha: installedSha,
     ...(gitInfo || {}),
     hasGit: !!gitInfo,
     npm: NPM,
@@ -165,26 +191,27 @@ router.get('/check', async (req, res) => {
       author: c.commit?.author?.name,
     }));
 
-    // Determine if update is available
-    let upToDate = false;
+    // Determine if update is available — compare local SHA (git or saved file) with remote
     let localSha = null;
+    let hasGit = false;
     try {
       localSha = (await run('git rev-parse --short HEAD', ROOT_DIR));
-      const remoteSha = latestCommit?.sha;
-      upToDate = remoteSha && localSha === remoteSha;
-    } catch {
-      // No git — can't compare SHAs; show latest available
-      upToDate = false;
-    }
+      hasGit = true;
+    } catch {}
+    if (!localSha) localSha = getInstalledSha();
 
+    const remoteSha = latestCommit?.sha;
+    const upToDate = !!(remoteSha && localSha && remoteSha === localSha);
+
+    const pkg = getPkg();
     res.json({ data: {
       localSha,
-      hasGit: !!localSha,
+      hasGit,
       upToDate,
       latestCommit,
       recentCommits,
       release: latestRelease,
-      currentVersion: PKG.version,
+      currentVersion: pkg.version,
     }});
   } catch (e) {
     res.status(500).json({ error: 'Cannot reach GitHub: ' + e.message });
@@ -220,6 +247,12 @@ router.post('/apply', async (req, res) => {
     // 1. Download ZIP from GitHub
     log('Fetching latest release info from GitHub...');
     let zipUrl;
+    let remoteShaFull = null;
+
+    // Get latest commit SHA for tracking
+    const headR = await httpsJSON(`https://api.github.com/repos/${GITHUB_REPO}/commits/HEAD`).catch(() => null);
+    if (headR?.body?.sha) remoteShaFull = headR.body.sha;
+
     const relR = await httpsJSON(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`).catch(() => null);
     if (relR?.body?.zipball_url) {
       zipUrl = relR.body.zipball_url;
@@ -296,6 +329,16 @@ router.post('/apply', async (req, res) => {
     log('Building web interface...');
     await run(`${NPM} run build`, clientDir);
     log('Web interface rebuilt', 'success');
+
+    // Save the installed SHA so future checks can detect up-to-date without git
+    if (remoteShaFull) {
+      saveInstalledSha(remoteShaFull);
+      log(`Installed SHA saved: ${remoteShaFull.slice(0, 7)}`, 'info');
+    }
+
+    // Bump patch version in package.json
+    const newVer = bumpVersion();
+    if (newVer) log(`Version bumped to v${newVer}`, 'success');
 
     log('Update complete! Restarting server...', 'success');
     log('RESTART_REQUIRED', 'restart');

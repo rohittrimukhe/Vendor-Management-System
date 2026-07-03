@@ -122,9 +122,9 @@ export default function SystemUpdate() {
           <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', padding: '22px 24px', marginBottom: 20 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 16 }}>Installed Version</div>
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-              <VersionBadge label="App Version" sha={`v${current.version}`} color={NAVY} />
-              <VersionBadge label="Commit SHA" sha={current.sha} extra={current.message} />
-              <VersionBadge label="Branch" sha={current.branch} extra={current.date?.split('T')[0]} />
+              <VersionBadge label="Installed Version" sha={`v${current.version}`} color="#27AE60" />
+              <VersionBadge label="Commit SHA" sha={current.sha || '—'} extra={current.message || (current.hasGit ? '' : 'Tracked via update history')} />
+              {current.branch && <VersionBadge label="Branch" sha={current.branch} extra={current.date?.split('T')[0]} />}
             </div>
             {current.message && (
               <div style={{ marginTop: 14, background: '#F8FAFC', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#555' }}>
@@ -159,7 +159,8 @@ export default function SystemUpdate() {
                   <div>
                     <div style={{ fontWeight: 700, fontSize: 15, color: '#27AE60' }}>You're up to date!</div>
                     <div style={{ fontSize: 13, color: '#555', marginTop: 2 }}>
-                      Local commit <code style={{ background: '#E8F5E9', padding: '1px 5px', borderRadius: 3, fontSize: 12 }}>{check.localSha || remoteSha}</code> matches latest on <strong>{remoteBranch}</strong>
+                      Version <strong style={{ color: '#27AE60' }}>v{check.currentVersion}</strong>
+                      {' · '} commit <code style={{ background: '#E8F5E9', padding: '1px 5px', borderRadius: 3, fontSize: 12 }}>{check.localSha || remoteSha}</code> matches latest on <strong>{remoteBranch}</strong>
                     </div>
                   </div>
                 </div>
@@ -167,14 +168,16 @@ export default function SystemUpdate() {
                 <div style={{ background: '#FFFBF0', border: '1px solid #F39C1260', borderRadius: 10, padding: '16px 20px', marginBottom: 16 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
                     <span style={{ fontSize: 28 }}>🆕</span>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: 15, color: '#E67E22' }}>
-                        {recentCommits.length > 0 ? `${recentCommits.length}+ new commits` : 'Updates'} available
-                      </div>
-                      <div style={{ fontSize: 13, color: '#555', marginTop: 2 }}>
-                        {check.localSha ? <>Your version: <code style={{ background: '#FFF3CD', padding: '1px 5px', borderRadius: 3, fontSize: 12 }}>{check.localSha}</code>{' → '}</> : ''}
-                        Latest: <code style={{ background: '#D4EDDA', padding: '1px 5px', borderRadius: 3, fontSize: 12 }}>{remoteSha || '—'}</code>
-                        {' on '}<strong>{remoteBranch}</strong>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 15, color: '#E67E22' }}>Update available</div>
+                      <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', fontSize: 13, color: '#555' }}>
+                        <span>Installed: <strong style={{ color: '#E74C3C' }}>v{check.currentVersion}</strong>
+                          {check.localSha && <> <code style={{ background: '#FFF3CD', padding: '1px 5px', borderRadius: 3, fontSize: 11 }}>{check.localSha}</code></>}
+                        </span>
+                        <span style={{ fontSize: 16, color: '#F39C12' }}>→</span>
+                        <span>Latest on <strong>{remoteBranch}</strong>:
+                          {' '}<code style={{ background: '#D4EDDA', padding: '1px 5px', borderRadius: 3, fontSize: 11 }}>{remoteSha || '—'}</code>
+                        </span>
                       </div>
                     </div>
                   </div>
