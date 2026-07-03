@@ -89,6 +89,10 @@ export default function SystemUpdate() {
 
   const upToDate = check?.upToDate;
   const hasUpdates = check && !upToDate;
+  // Server returns: recentCommits[], latestCommit{sha,message,author,date}, localSha, hasGit, upToDate, release, currentVersion
+  const remoteSha = check?.latestCommit?.sha;
+  const recentCommits = check?.recentCommits || [];
+  const remoteBranch = 'main';
 
   return (
     <Layout title="System Update">
@@ -155,7 +159,7 @@ export default function SystemUpdate() {
                   <div>
                     <div style={{ fontWeight: 700, fontSize: 15, color: '#27AE60' }}>You're up to date!</div>
                     <div style={{ fontSize: 13, color: '#555', marginTop: 2 }}>
-                      Local commit <code style={{ background: '#E8F5E9', padding: '1px 5px', borderRadius: 3, fontSize: 12 }}>{check.localSha}</code> matches latest on <strong>{check.remoteBranch}</strong>
+                      Local commit <code style={{ background: '#E8F5E9', padding: '1px 5px', borderRadius: 3, fontSize: 12 }}>{check.localSha || remoteSha}</code> matches latest on <strong>{remoteBranch}</strong>
                     </div>
                   </div>
                 </div>
@@ -164,31 +168,32 @@ export default function SystemUpdate() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
                     <span style={{ fontSize: 28 }}>🆕</span>
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: 15, color: '#E67E22' }}>{check.newCommitsCount} new commit{check.newCommitsCount !== 1 ? 's' : ''} available</div>
+                      <div style={{ fontWeight: 700, fontSize: 15, color: '#E67E22' }}>
+                        {recentCommits.length > 0 ? `${recentCommits.length}+ new commits` : 'Updates'} available
+                      </div>
                       <div style={{ fontSize: 13, color: '#555', marginTop: 2 }}>
-                        Your version: <code style={{ background: '#FFF3CD', padding: '1px 5px', borderRadius: 3, fontSize: 12 }}>{check.localSha}</code>
-                        {' → '}
-                        Latest: <code style={{ background: '#D4EDDA', padding: '1px 5px', borderRadius: 3, fontSize: 12 }}>{check.remoteSha}</code>
-                        {' on '}<strong>{check.remoteBranch}</strong>
+                        {check.localSha ? <>Your version: <code style={{ background: '#FFF3CD', padding: '1px 5px', borderRadius: 3, fontSize: 12 }}>{check.localSha}</code>{' → '}</> : ''}
+                        Latest: <code style={{ background: '#D4EDDA', padding: '1px 5px', borderRadius: 3, fontSize: 12 }}>{remoteSha || '—'}</code>
+                        {' on '}<strong>{remoteBranch}</strong>
                       </div>
                     </div>
                   </div>
 
                   {/* Commit list */}
-                  {check.newCommits.length > 0 && (
+                  {recentCommits.length > 0 && (
                     <div style={{ background: '#fff', border: '1px solid #F0E0B0', borderRadius: 8, overflow: 'hidden', marginBottom: 14 }}>
                       <div style={{ padding: '8px 12px', background: '#FFF8E1', fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid #F0E0B0' }}>
-                        What's New
+                        Recent Commits on GitHub
                       </div>
-                      {check.newCommits.map((c, i) => (
-                        <div key={c.sha} style={{ display: 'flex', gap: 10, padding: '9px 14px', borderBottom: i < check.newCommits.length - 1 ? '1px solid #F8F0D8' : 'none', alignItems: 'flex-start' }}>
+                      {recentCommits.map((c, i) => (
+                        <div key={c.sha} style={{ display: 'flex', gap: 10, padding: '9px 14px', borderBottom: i < recentCommits.length - 1 ? '1px solid #F8F0D8' : 'none', alignItems: 'flex-start' }}>
                           <code style={{ fontSize: 11, color: '#29ABE2', fontFamily: 'monospace', flexShrink: 0, marginTop: 2, background: '#EEF9FF', padding: '1px 5px', borderRadius: 3 }}>{c.sha}</code>
-                          <span style={{ fontSize: 13, color: '#444', lineHeight: 1.4 }}>{c.message}</span>
+                          <div style={{ flex: 1 }}>
+                            <span style={{ fontSize: 13, color: '#444', lineHeight: 1.4 }}>{c.message}</span>
+                            {c.author && <span style={{ fontSize: 11, color: '#aaa', marginLeft: 6 }}>— {c.author}</span>}
+                          </div>
                         </div>
                       ))}
-                      {check.newCommitsCount > 20 && (
-                        <div style={{ padding: '8px 14px', fontSize: 12, color: '#aaa', background: '#FFFBF0' }}>…and {check.newCommitsCount - 20} more commits</div>
-                      )}
                     </div>
                   )}
 
@@ -203,7 +208,7 @@ export default function SystemUpdate() {
                   {/* Update button */}
                   <button onClick={startUpdate} disabled={updating} style={{ ...btnPrimary('#27AE60'), display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 16 }}>⬇️</span>
-                    {updating ? 'Updating...' : `Update to Latest (${check.newCommitsCount} commit${check.newCommitsCount !== 1 ? 's' : ''})`}
+                    {updating ? 'Updating...' : 'Update to Latest'}
                   </button>
                 </div>
               )}
