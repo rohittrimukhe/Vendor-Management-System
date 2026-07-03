@@ -24,10 +24,55 @@ function Modal({ title, onClose, children, wide }) {
   );
 }
 
+const STATUS_MAP = { 'Empanelled': ['#27AE60', '#F0FFF4'], 'In Evaluation': ['#F39C12', '#FFFBF0'], 'On Hold': ['#E74C3C', '#FFF5F5'], 'Archived': ['#95A5A6', '#F5F5F5'], 'Active': ['#27AE60', '#F0FFF4'], 'Expired': ['#E74C3C', '#FFF5F5'], 'Pending': ['#F39C12', '#FFFBF0'], 'Approved': ['#27AE60', '#F0FFF4'], 'Rejected': ['#E74C3C', '#FFF5F5'], 'In Progress': ['#29ABE2', '#EEF9FF'] };
+
 function StatusBadge({ status }) {
-  const map = { 'Empanelled': ['#27AE60', '#F0FFF4'], 'In Evaluation': ['#F39C12', '#FFFBF0'], 'On Hold': ['#E74C3C', '#FFF5F5'], 'Archived': ['#95A5A6', '#F5F5F5'], 'Active': ['#27AE60', '#F0FFF4'], 'Expired': ['#E74C3C', '#FFF5F5'], 'Pending': ['#F39C12', '#FFFBF0'], 'Approved': ['#27AE60', '#F0FFF4'], 'Rejected': ['#E74C3C', '#FFF5F5'], 'In Progress': ['#29ABE2', '#EEF9FF'] };
-  const [c, bg] = map[status] || ['#888', '#F5F5F5'];
+  const [c, bg] = STATUS_MAP[status] || ['#888', '#F5F5F5'];
   return <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, color: c, background: bg }}>{status}</span>;
+}
+
+const EMPANELMENT_STATUSES = ['In Evaluation', 'Empanelled', 'On Hold', 'Archived'];
+const STATUS_ICONS = { 'Empanelled': '✅', 'In Evaluation': '🔍', 'On Hold': '⏸', 'Archived': '📦' };
+
+function StatusDropdown({ status, onchange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef();
+  useEffect(() => {
+    function h(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  const [c, bg] = STATUS_MAP[status] || ['#888', '#F5F5F5'];
+
+  return (
+    <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{ padding: '4px 10px 4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, color: c, background: bg, border: `1.5px solid ${c}33`, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+      >
+        {STATUS_ICONS[status]} {status} <span style={{ fontSize: 10, opacity: 0.6 }}>▾</span>
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)', background: '#fff', borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.16)', border: '1px solid #E8ECF0', zIndex: 200, minWidth: 170, overflow: 'hidden' }}>
+          <div style={{ padding: '8px 12px', fontSize: 10, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.08em', borderBottom: '1px solid #F0F4F8' }}>Change Status</div>
+          {EMPANELMENT_STATUSES.map(s => (
+            <div
+              key={s}
+              onClick={() => { onchange(s); setOpen(false); }}
+              style={{ padding: '9px 14px', display: 'flex', alignItems: 'center', gap: 8, cursor: s === status ? 'default' : 'pointer', background: s === status ? '#F8FAFC' : 'transparent', transition: 'background 0.15s' }}
+              onMouseEnter={e => { if (s !== status) e.currentTarget.style.background = '#F5F8FF'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = s === status ? '#F8FAFC' : 'transparent'; }}
+            >
+              <span style={{ fontSize: 14 }}>{STATUS_ICONS[s]}</span>
+              <span style={{ fontSize: 13, fontWeight: s === status ? 700 : 400, color: s === status ? (STATUS_MAP[s]?.[0] || '#333') : '#333' }}>{s}</span>
+              {s === status && <span style={{ marginLeft: 'auto', fontSize: 11, color: STATUS_MAP[s]?.[0] }}>✓ Current</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function Stars({ rating }) {
@@ -51,6 +96,11 @@ export default function VendorDetail() {
   const [tab, setTab] = useState(0);
   const [vendor, setVendor] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const changeStatus = async (newStatus) => {
+    await api.post(`/api/vendors/bulk`, { ids: [parseInt(id)], action: 'status', value: newStatus });
+    setVendor(v => ({ ...v, empanelment_status: newStatus }));
+  };
 
   const [contacts, setContacts] = useState([]);
   const [documents, setDocuments] = useState([]);
@@ -279,7 +329,9 @@ export default function VendorDetail() {
           <div style={{ width: 80, height: 80, borderRadius: 16, background: vendor.logo_color || NAVY, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 32, margin: '0 auto 16px' }}>{vendor.logo_initial || vendor.name[0]}</div>
           <div style={{ fontFamily: 'Montserrat', fontWeight: 700, fontSize: 17, color: NAVY, marginBottom: 10 }}>{vendor.name}</div>
           <div style={{ display: 'flex', justifyContent: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <StatusBadge status={vendor.empanelment_status} />
+            {can('Vendors', 'Edit')
+              ? <StatusDropdown status={vendor.empanelment_status} onchange={changeStatus} />
+              : <StatusBadge status={vendor.empanelment_status} />}
             <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, color: '#fff', background: '#29ABE2' }}>{vendor.tier}</span>
             {vendor.risk_level && (() => {
               const rc = { Low: '#27AE60', Medium: '#F39C12', High: '#E67E22', Critical: '#E74C3C' };
