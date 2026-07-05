@@ -225,7 +225,10 @@ if (Test-Path $trayDir) {
         $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm run build 2>&1" -WorkingDirectory $trayDir -Wait -PassThru -NoNewWindow
         $builtExe = "$InstallDir\dist\VendorHub.exe"
         if ($proc.ExitCode -eq 0 -and (Test-Path $builtExe)) {
-            Copy-Item $builtExe $exeDest -Force
+            # Stop any running VendorHub.exe before overwriting
+            Get-Process -Name "VendorHub" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds 800
+            Copy-Item $builtExe $exeDest -Force -ErrorAction SilentlyContinue
             OK "VendorHub.exe built and placed at $exeDest"
         } else {
             WARN "Build step failed. VendorHub.exe not available - will use bat fallback."
@@ -233,6 +236,22 @@ if (Test-Path $trayDir) {
     }
 } else {
     WARN "tray\ folder not found - skipping VendorHub.exe build."
+}
+
+# Record installed SHA so update checker knows this is the current version
+INFO "Recording installed version SHA..."
+try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $shaResp = Invoke-WebRequest -Uri "https://api.github.com/repos/rohittrimukhe/Vendor-Management-System/commits/HEAD" `
+        -UseBasicParsing -Headers @{'User-Agent'='VendorHub-Installer'} -TimeoutSec 10 -ErrorAction Stop
+    $shaJson = $shaResp.Content | ConvertFrom-Json
+    $installedSha = $shaJson.sha.Substring(0, 7)
+    $dataDir = "$InstallDir\data"
+    if (-not (Test-Path $dataDir)) { New-Item -ItemType Directory -Path $dataDir -Force | Out-Null }
+    [System.IO.File]::WriteAllText("$dataDir\installed_sha.txt", $installedSha, [System.Text.Encoding]::ASCII)
+    OK "Installed SHA saved: $installedSha (update checker will show 'up to date' correctly)"
+} catch {
+    WARN "Could not fetch SHA from GitHub - update checker may show false 'update available' on first run."
 }
 
 # STEP 6 - Create shortcuts
@@ -301,7 +320,12 @@ try {
     $taskName = "VendorHub_AutoStart"
     Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
 
-    $action    = New-ScheduledTaskAction -Execute $autoStartTarget -Argument $autoStartArgs -WorkingDirectory $InstallDir
+    # New-ScheduledTaskAction rejects empty -Argument; omit it when not needed
+    if ($autoStartArgs -ne "") {
+        $action = New-ScheduledTaskAction -Execute $autoStartTarget -Argument $autoStartArgs -WorkingDirectory $InstallDir
+    } else {
+        $action = New-ScheduledTaskAction -Execute $autoStartTarget -WorkingDirectory $InstallDir
+    }
     $trigger   = New-ScheduledTaskTrigger -AtLogOn
     $settings  = New-ScheduledTaskSettingsSet `
         -AllowStartIfOnBatteries `
