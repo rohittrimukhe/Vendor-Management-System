@@ -465,9 +465,21 @@ function initTray() {
     }
   });
 
-  // onError not called here — systray2 v2.x initialises _process async so
-  // calling it immediately would throw. uncaughtException handler covers it.
   log('Tray initialized');
+
+  // systray2 v2.x spawns the tray binary asynchronously; check after 4s
+  setTimeout(() => {
+    if (!trayInstance._process) {
+      log('WARNING: Tray binary did not start. Check tray.log for details.');
+      log('Tray bin path: ' + (trayInstance._binPath || 'unknown'));
+      // Retry once
+      try { trayInstance.kill(); } catch {}
+      trayInstance = null;
+      setTimeout(initTray, 2000);
+    } else {
+      log('Tray binary running (PID ' + trayInstance._process.pid + ')');
+    }
+  }, 4000);
 }
 
 // ── Periodic health monitor ───────────────────────────────────────────────────

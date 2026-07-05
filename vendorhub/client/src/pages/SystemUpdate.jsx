@@ -87,12 +87,14 @@ export default function SystemUpdate() {
     }, 1000);
   };
 
-  const upToDate = check?.upToDate;
-  const hasUpdates = check && !upToDate;
   // Normalise server response field names
-  const remoteSha      = check?.latestCommit?.sha || check?.remoteSha;
+  const remoteSha      = check?.latestCommit?.sha || check?.remoteSha || null;
   const remoteBranch   = check?.remoteBranch || 'main';
   const newCommits     = check?.recentCommits || check?.newCommits || [];
+  const upToDate       = check?.upToDate;
+  // Only treat as "has updates" when we actually have a valid remote SHA to compare
+  const hasUpdates     = check && !upToDate && !!remoteSha;
+  const githubUnreachable = check && !remoteSha;
   const newCommitsCount = check?.newCommitsCount ?? newCommits.length;
 
   return (
@@ -153,6 +155,18 @@ export default function SystemUpdate() {
 
           {check && !checkError && (
             <div>
+              {/* GitHub unreachable — API returned no SHA (rate limit / network) */}
+              {githubUnreachable && (
+                <div style={{ background: '#FFF8E1', border: '1px solid #FFD54F', borderRadius: 10, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+                  <span style={{ fontSize: 28 }}>⚠️</span>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 15, color: '#E67E22' }}>Could not reach GitHub</div>
+                    <div style={{ fontSize: 13, color: '#555', marginTop: 2 }}>
+                      GitHub API did not return version info — you may be rate-limited (60 requests/hour for unauthenticated). Try again in a few minutes.
+                    </div>
+                  </div>
+                </div>
+              )}
               {/* Status banner */}
               {upToDate ? (
                 <div style={{ background: '#F0FFF4', border: '1px solid #A3E4B8', borderRadius: 10, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
