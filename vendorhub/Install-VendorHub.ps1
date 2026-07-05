@@ -190,19 +190,18 @@ Set-Location $InstallDir
 if ($Port -ne 8080) {
     INFO "Writing port $Port to database..."
     try {
-        $sqliteExe = Get-Command sqlite3 -ErrorAction SilentlyContinue
-        if ($sqliteExe) {
-            $dbPath = "$InstallDir\data\vendorhub.db"
-            if (Test-Path $dbPath) {
-                sqlite3 $dbPath "INSERT OR REPLACE INTO settings (key, value) VALUES ('server_port', '$Port');"
-                OK "Port $Port saved to database"
-            }
-        } else {
-            # No sqlite3 CLI - use node to write the setting
-            $nodeScript = "const d=require('better-sqlite3')('$($dbPath -replace '\\','\\\\')');d.prepare(\"INSERT OR REPLACE INTO settings(key,value)VALUES('server_port',?)\").run('$Port');d.close();"
-            $proc = Start-Process -FilePath "node.exe" -ArgumentList "-e `"$nodeScript`"" -WorkingDirectory $InstallDir -Wait -PassThru -NoNewWindow
-            if ($proc.ExitCode -eq 0) { OK "Port $Port saved to database" } else { WARN "Could not write port to DB - server will use default 8080 until changed in Settings" }
-        }
+        $dataDir2 = "$InstallDir\data"
+        if (-not (Test-Path $dataDir2)) { New-Item -ItemType Directory -Path $dataDir2 -Force | Out-Null }
+        $tmpJs = "$env:TEMP\vh_setport.js"
+        $dbPathEsc = "$InstallDir\data\vendorhub.db" -replace '\\', '\\\\'
+        Set-Content -Path $tmpJs -Encoding ASCII -Value @"
+var db = require('./node_modules/better-sqlite3')('$dbPathEsc');
+db.prepare("INSERT OR REPLACE INTO settings(key,value)VALUES('server_port','$Port')").run();
+db.close();
+"@
+        $proc = Start-Process -FilePath "node.exe" -ArgumentList "`"$tmpJs`"" -WorkingDirectory $InstallDir -Wait -PassThru -NoNewWindow
+        Remove-Item $tmpJs -ErrorAction SilentlyContinue
+        if ($proc.ExitCode -eq 0) { OK "Port $Port saved to database" } else { WARN "Could not write port to DB - change it in Settings after first launch" }
     } catch {
         WARN "Could not write port to database: $_"
     }
