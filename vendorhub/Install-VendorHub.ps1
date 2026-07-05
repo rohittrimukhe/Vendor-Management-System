@@ -5,7 +5,7 @@ $ErrorActionPreference = "Continue"
 $Port = 8080
 $InstallDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# Force ASCII-safe output
+# Force UTF-8 output
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 function Show-Banner {
@@ -39,42 +39,12 @@ function FAIL($text) {
     exit 1
 }
 
-function Run-Command($label, $cmd, $args) {
-    INFO $label
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $cmd
-    $psi.Arguments = $args
-    $psi.WorkingDirectory = (Get-Location).Path
-    $psi.UseShellExecute = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.CreateNoWindow = $true
-
-    $proc = [System.Diagnostics.Process]::Start($psi)
-
-    # Stream stdout live
-    $stdout = $proc.StandardOutput.ReadToEnd()
-    $stderr = $proc.StandardError.ReadToEnd()
-    $proc.WaitForExit()
-
-    # Show any real errors (not just warnings)
-    if ($proc.ExitCode -ne 0) {
-        Write-Host ""
-        Write-Host "--- Output ---" -ForegroundColor DarkGray
-        if ($stdout) { Write-Host $stdout -ForegroundColor Gray }
-        if ($stderr)  { Write-Host $stderr  -ForegroundColor Red }
-        Write-Host "--------------" -ForegroundColor DarkGray
-        return $false
-    }
-    return $true
-}
-
 # =============================================================================
 Show-Banner
 
 # STEP 1 - Check files
 # =============================================================================
-Step 1 7 "Checking files"
+Step 1 6 "Checking files"
 
 if (-not (Test-Path "$InstallDir\server\index.js")) {
     FAIL "Cannot find server\index.js. Make sure you extracted the ZIP and are running the installer from inside the 'vendorhub' folder."
@@ -86,14 +56,12 @@ OK "All required files found"
 
 # STEP 2 - Check / Install Node.js
 # =============================================================================
-Step 2 7 "Checking Node.js"
+Step 2 6 "Checking Node.js"
 
 $needNode = $false
 
 try {
-    # Refresh PATH first in case Node was just installed
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-
     $nodeRaw = cmd /c "node --version" 2>&1
     $nodeVer = ($nodeRaw | Select-Object -First 1).ToString().Trim()
 
@@ -138,14 +106,11 @@ if ($needNode) {
         FAIL "Node.js installer failed with code $($msiProc.ExitCode). Please install Node.js 20 manually from https://nodejs.org and re-run."
     }
 
-    # Refresh PATH so node/npm are available now
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-
     $nodeVer = (cmd /c "node --version" 2>&1 | Select-Object -First 1).ToString().Trim()
     OK "Node.js $nodeVer installed successfully"
 }
 
-# Locate npm (PowerShell 5 compatible - no ?. operator)
 $npmCmd = Get-Command npm -ErrorAction SilentlyContinue
 $npmPath = if ($npmCmd) { $npmCmd.Source } else { $null }
 if (-not $npmPath) {
@@ -155,7 +120,7 @@ INFO "Using npm at: $npmPath"
 
 # STEP 3 - Install server packages
 # =============================================================================
-Step 3 7 "Installing server packages"
+Step 3 6 "Installing server packages"
 INFO "This takes 2-4 minutes - please wait..."
 Write-Host ""
 
@@ -176,7 +141,7 @@ OK "Server packages installed"
 
 # STEP 4 - Build web interface
 # =============================================================================
-Step 4 7 "Building web interface"
+Step 4 6 "Building web interface"
 INFO "This takes 1-2 minutes - please wait..."
 Write-Host ""
 
@@ -208,37 +173,7 @@ OK "Web interface built successfully"
 
 Set-Location $InstallDir
 
-# STEP 5 - Build VendorHub.exe tray application
-# =============================================================================
-Step 5 7 "Building VendorHub tray application"
-
-$trayDir = "$InstallDir\tray"
-$exeDest = "$InstallDir\VendorHub.exe"
-
-if (Test-Path $trayDir) {
-    INFO "Installing tray dependencies (systray2, pkg)..."
-    $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm install 2>&1" -WorkingDirectory $trayDir -Wait -PassThru -NoNewWindow
-    if ($proc.ExitCode -ne 0) {
-        WARN "Tray npm install failed - VendorHub.exe will not be built. You can still use Start-VendorHub.bat."
-    } else {
-        INFO "Building VendorHub.exe (compiling to single executable)..."
-        $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm run build 2>&1" -WorkingDirectory $trayDir -Wait -PassThru -NoNewWindow
-        $builtExe = "$InstallDir\dist\VendorHub.exe"
-        if ($proc.ExitCode -eq 0 -and (Test-Path $builtExe)) {
-            # Stop any running VendorHub.exe before overwriting
-            Get-Process -Name "VendorHub" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Milliseconds 800
-            Copy-Item $builtExe $exeDest -Force -ErrorAction SilentlyContinue
-            OK "VendorHub.exe built and placed at $exeDest"
-        } else {
-            WARN "Build step failed. VendorHub.exe not available - will use bat fallback."
-        }
-    }
-} else {
-    WARN "tray\ folder not found - skipping VendorHub.exe build."
-}
-
-# Record installed SHA so update checker knows this is the current version
+# Record installed SHA so update checker knows current version
 INFO "Recording installed version SHA..."
 try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -249,24 +184,40 @@ try {
     $dataDir = "$InstallDir\data"
     if (-not (Test-Path $dataDir)) { New-Item -ItemType Directory -Path $dataDir -Force | Out-Null }
     [System.IO.File]::WriteAllText("$dataDir\installed_sha.txt", $installedSha, [System.Text.Encoding]::ASCII)
-    OK "Installed SHA saved: $installedSha (update checker will show 'up to date' correctly)"
+    OK "Installed SHA saved: $installedSha"
 } catch {
     WARN "Could not fetch SHA from GitHub - update checker may show false 'update available' on first run."
 }
 
-# STEP 6 - Create shortcuts
+# STEP 5 - Create shortcuts
 # =============================================================================
-Step 6 7 "Creating shortcuts"
+Step 5 6 "Creating shortcuts"
 
-# Keep bat as fallback for users without tray exe
+# Start-VendorHub.bat loops on exit code 100 (update restart signal from server)
 $startBat = "$InstallDir\Start-VendorHub.bat"
 Set-Content -Path $startBat -Encoding ASCII -Value @"
 @echo off
 title VendorHub Server - LRS Services Pvt Ltd
 color 1F
+
+:start
+echo.
+echo  ============================================
+echo   VendorHub Server  -  LRS Services Pvt Ltd
+echo  ============================================
+echo.
+echo  Server starting on http://localhost:$Port
+echo  Keep this window open while using VendorHub.
+echo  Close this window to stop the server.
 echo.
 cd /d "$InstallDir"
 node server\index.js
+if %errorlevel% == 100 (
+    echo.
+    echo  Restarting after update...
+    timeout /t 3 /nobreak >nul
+    goto start
+)
 echo.
 echo  Server has stopped.
 pause
@@ -280,52 +231,31 @@ echo Done. VendorHub stopped.
 timeout /t 2 >nul
 "@
 
-# Desktop shortcuts - prefer VendorHub.exe
+# Desktop shortcut - always uses Start-VendorHub.bat
 try {
     $desktop = [System.Environment]::GetFolderPath("CommonDesktopDirectory")
     $WshShell = New-Object -ComObject WScript.Shell
 
-    # Main shortcut: VendorHub.exe if built, else browser link
     $sc1 = $WshShell.CreateShortcut("$desktop\VendorHub.lnk")
-    if (Test-Path $exeDest) {
-        $sc1.TargetPath  = $exeDest
-        $sc1.Description = "Run VendorHub (manages server + opens browser)"
-    } else {
-        $sc1.TargetPath  = "http://localhost:$Port"
-        $sc1.Description = "Open VendorHub in browser"
-    }
+    $sc1.TargetPath       = $startBat
+    $sc1.Description      = "Start VendorHub Server"
+    $sc1.WorkingDirectory = $InstallDir
     $sc1.Save()
 
     OK "Desktop shortcut 'VendorHub' created"
 } catch {
-    WARN "Could not create desktop shortcuts: $_"
+    WARN "Could not create desktop shortcut: $_"
 }
 
-# STEP 7 - Auto-start with Windows
+# STEP 6 - Auto-start with Windows
 # =============================================================================
-Step 7 7 "Setting up auto-start with Windows"
+Step 6 6 "Setting up auto-start with Windows"
 
 try {
-    # Prefer VendorHub.exe for auto-start; fall back to bat
-    if (Test-Path $exeDest) {
-        $autoStartTarget = $exeDest
-        $autoStartArgs   = ""
-        INFO "Auto-start will use VendorHub.exe (tray app)"
-    } else {
-        $autoStartTarget = "cmd.exe"
-        $autoStartArgs   = "/c `"$startBat`""
-        INFO "Auto-start will use Start-VendorHub.bat"
-    }
-
     $taskName = "VendorHub_AutoStart"
     Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
 
-    # New-ScheduledTaskAction rejects empty -Argument; omit it when not needed
-    if ($autoStartArgs -ne "") {
-        $action = New-ScheduledTaskAction -Execute $autoStartTarget -Argument $autoStartArgs -WorkingDirectory $InstallDir
-    } else {
-        $action = New-ScheduledTaskAction -Execute $autoStartTarget -WorkingDirectory $InstallDir
-    }
+    $action    = New-ScheduledTaskAction -Execute $startBat -WorkingDirectory $InstallDir
     $trigger   = New-ScheduledTaskTrigger -AtLogOn
     $settings  = New-ScheduledTaskSettingsSet `
         -AllowStartIfOnBatteries `
@@ -356,19 +286,13 @@ Write-Host "  =================================================" -ForegroundColo
 Write-Host "   INSTALLATION COMPLETE!" -ForegroundColor Green
 Write-Host "  =================================================" -ForegroundColor Green
 Write-Host ""
-
-if (Test-Path $exeDest) {
-    Write-Host "  HOW TO USE:" -ForegroundColor Yellow
-    Write-Host "   * Double-click 'VendorHub' on your Desktop" -ForegroundColor White
-    Write-Host "   * The VendorHub icon will appear in the system tray (bottom-right clock area)" -ForegroundColor White
-    Write-Host "   * Right-click the tray icon to Open, Restart, Stop, or Check for Updates" -ForegroundColor White
-    Write-Host "   * VendorHub starts automatically with Windows - no CMD window needed!" -ForegroundColor White
-} else {
-    Write-Host "  HOW TO USE EVERY DAY:" -ForegroundColor Yellow
-    Write-Host "   1. Double-click 'VendorHub' on your Desktop" -ForegroundColor White
-    Write-Host "   2. Wait for the message: 'Server running on http://localhost:$Port'" -ForegroundColor White
-    Write-Host "   3. Open your browser to http://localhost:$Port" -ForegroundColor White
-}
+Write-Host "  HOW TO USE EVERY DAY:" -ForegroundColor Yellow
+Write-Host "   1. Double-click 'VendorHub' on your Desktop" -ForegroundColor White
+Write-Host "   2. A CMD window opens - keep it open while using VendorHub" -ForegroundColor White
+Write-Host "   3. Open your browser to http://localhost:$Port" -ForegroundColor White
+Write-Host "   4. Close the CMD window when you are done for the day" -ForegroundColor White
+Write-Host ""
+Write-Host "  After an update, the CMD window restarts automatically." -ForegroundColor Gray
 Write-Host ""
 Write-Host "  -------------------------------------------------" -ForegroundColor DarkGray
 Write-Host ""
@@ -377,43 +301,34 @@ $answer = Read-Host "  Start VendorHub right now? (Y = Yes, N = No)"
 
 if ($answer -match "^[Yy]") {
     Write-Host ""
-    if (Test-Path $exeDest) {
-        INFO "Launching VendorHub tray app..."
-        Start-Process $exeDest
+    INFO "Starting VendorHub server..."
+    Start-Process "cmd.exe" -ArgumentList "/c `"$startBat`""
+
+    INFO "Waiting for server to be ready (up to 30 seconds)..."
+    $ready = $false
+    for ($i = 1; $i -le 30; $i++) {
+        Start-Sleep -Seconds 1
+        Write-Host "  Checking... $i/30`r" -NoNewline -ForegroundColor DarkGray
+        try {
+            $r = Invoke-WebRequest -Uri "http://localhost:$Port/api/setup/status" `
+                -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
+            if ($r -and $r.StatusCode -eq 200) { $ready = $true; break }
+        } catch {}
+    }
+    Write-Host "                                        `r" -NoNewline
+
+    if ($ready) {
         Write-Host ""
-        Write-Host "  VendorHub is starting in the background." -ForegroundColor Green
-        Write-Host "  Look for the VH icon in the system tray (bottom-right of taskbar)." -ForegroundColor Green
-        Write-Host "  Double-click the tray icon or right-click > Open VendorHub to open in browser." -ForegroundColor Green
+        OK "Server is running!"
+        INFO "Opening browser..."
+        Start-Sleep -Milliseconds 800
+        Start-Process "http://localhost:$Port"
+        Write-Host ""
+        Write-Host "  Browser opened! Complete the Setup Wizard to get started." -ForegroundColor Green
     } else {
-        INFO "Starting VendorHub server..."
-        Start-Process "cmd.exe" -ArgumentList "/c `"$startBat`""
-
-        INFO "Waiting for server to be ready (up to 30 seconds)..."
-        $ready = $false
-        for ($i = 1; $i -le 30; $i++) {
-            Start-Sleep -Seconds 1
-            Write-Host "  Checking... $i/30`r" -NoNewline -ForegroundColor DarkGray
-            try {
-                $r = Invoke-WebRequest -Uri "http://localhost:$Port/api/setup/status" `
-                    -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
-                if ($r -and $r.StatusCode -eq 200) { $ready = $true; break }
-            } catch {}
-        }
-        Write-Host "                                        `r" -NoNewline
-
-        if ($ready) {
-            Write-Host ""
-            OK "Server is running!"
-            INFO "Opening browser..."
-            Start-Sleep -Milliseconds 800
-            Start-Process "http://localhost:$Port"
-            Write-Host ""
-            Write-Host "  Browser opened! Complete the Setup Wizard to get started." -ForegroundColor Green
-        } else {
-            Write-Host ""
-            WARN "Server is still starting. Please open your browser manually and go to:"
-            Write-Host "       http://localhost:$Port" -ForegroundColor Cyan
-        }
+        Write-Host ""
+        WARN "Server is still starting. Please open your browser manually and go to:"
+        Write-Host "       http://localhost:$Port" -ForegroundColor Cyan
     }
 }
 

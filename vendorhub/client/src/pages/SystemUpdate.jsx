@@ -167,8 +167,8 @@ export default function SystemUpdate() {
                   </div>
                 </div>
               )}
-              {/* Status banner */}
-              {upToDate ? (
+              {/* Status banner — only when GitHub actually responded with a SHA */}
+              {!githubUnreachable && upToDate ? (
                 <div style={{ background: '#F0FFF4', border: '1px solid #A3E4B8', borderRadius: 10, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
                   <span style={{ fontSize: 28 }}>✅</span>
                   <div>
@@ -178,7 +178,7 @@ export default function SystemUpdate() {
                     </div>
                   </div>
                 </div>
-              ) : (
+              ) : !githubUnreachable && hasUpdates ? (
                 <div style={{ background: '#FFFBF0', border: '1px solid #F39C1260', borderRadius: 10, padding: '16px 20px', marginBottom: 16 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
                     <span style={{ fontSize: 28 }}>🆕</span>
@@ -225,7 +225,7 @@ export default function SystemUpdate() {
                     {updating ? 'Updating...' : `Update to Latest (${newCommitsCount} commit${newCommitsCount !== 1 ? 's' : ''})`}
                   </button>
                 </div>
-              )}
+              ) : null}
             </div>
           )}
 

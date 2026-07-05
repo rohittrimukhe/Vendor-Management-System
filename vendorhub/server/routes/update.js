@@ -373,7 +373,7 @@ router.post('/apply', async (req, res) => {
 
     setTimeout(() => {
       updateInProgress = false;
-      process.exit(0);
+      process.exit(100);  // 100 = restart signal; Start-VendorHub.bat loops on this code
     }, 2000);
 
   } catch (e) {
