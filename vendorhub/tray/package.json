@@ -1,0 +1,17 @@
+{
+  "name": "vendorhub-tray",
+  "version": "1.0.0",
+  "description": "VendorHub System Tray Manager - LRS Services Pvt Ltd",
+  "main": "tray.js",
+  "scripts": {
+    "start": "node tray.js",
+    "build": "pkg tray.js --targets node18-win-x64 --output ../dist/VendorHub.exe --config pkg.json",
+    "build-debug": "pkg tray.js --targets node18-win-x64 --output ../dist/VendorHub-debug.exe --config pkg.json --debug"
+  },
+  "dependencies": {
+    "systray2": "^0.0.14"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  }
+}

@@ -5,7 +5,7 @@
 #define AppVersion "1.0.0"
 #define AppPublisher "LRS Services Pvt Ltd"
 #define AppURL "http://localhost:8080"
-#define AppExeName "vendorhub-service.bat"
+#define AppExeName "VendorHub.exe"
 
 [Setup]
 AppId={{B2F7C8D4-3A1E-4F2B-9C6D-7E8A0B1C2D3E}
@@ -37,7 +37,10 @@ Name: "startservice"; Description: "Start VendorHub service after installation";
 [Files]
 ; Application files
 Source: "..\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; \
-  Excludes: "*.db,node_modules\*,.git\*,dist\*,client\node_modules\*"
+  Excludes: "*.db,node_modules\*,.git\*,dist\*,client\node_modules\*,tray\node_modules\*"
+
+; VendorHub tray exe (built by installer step 5 or pre-built)
+Source: "..\dist\VendorHub.exe"; DestDir: "{app}"; Flags: ignoreversion; Check: FileExists(ExpandConstant('{src}\..\dist\VendorHub.exe'))
 
 ; Bundled Node.js runtime (place node-v18.x.x-win-x64 folder in installer\)
 Source: "node-v18\*"; DestDir: "{app}\node"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -52,27 +55,23 @@ Name: "{commonappdata}\VendorHub\uploads"
 Name: "{commonappdata}\VendorHub\backups"
 
 [Icons]
-Name: "{group}\VendorHub"; Filename: "{app}\vendorhub-open.bat"; IconFilename: "{app}\assets\icon.ico"
+Name: "{group}\VendorHub"; Filename: "{app}\VendorHub.exe"; Comment: "Start VendorHub (system tray)"
 Name: "{group}\Uninstall VendorHub"; Filename: "{uninstallexe}"
-Name: "{commondesktop}\VendorHub"; Filename: "{app}\vendorhub-open.bat"; Tasks: desktopicon; IconFilename: "{app}\assets\icon.ico"
+Name: "{commondesktop}\VendorHub"; Filename: "{app}\VendorHub.exe"; Tasks: desktopicon; Comment: "Start VendorHub (system tray)"
 
 [Registry]
 Root: HKLM; Subkey: "SOFTWARE\LRS Services\VendorHub"; ValueType: string; ValueName: "InstallPath"; ValueData: "{app}"; Flags: uninsdeletesubkey
 Root: HKLM; Subkey: "SOFTWARE\LRS Services\VendorHub"; ValueType: string; ValueName: "DataPath"; ValueData: "{commonappdata}\VendorHub"; Flags: uninsdeletesubkey
 
 [Run]
-; Install node-windows service
-Filename: "{app}\node\node.exe"; Parameters: "{app}\service-install.js"; WorkingDir: "{app}"; \
-  Flags: runhidden waituntilterminated; StatusMsg: "Installing VendorHub Windows Service..."; \
-  Tasks: startservice
-; Open browser to setup page on first run
-Filename: "{app}\vendorhub-open.bat"; Parameters: "setup"; \
-  Flags: nowait postinstall skipifsilent; Description: "Open VendorHub setup page"; \
+; Launch VendorHub tray app after installation
+Filename: "{app}\VendorHub.exe"; WorkingDir: "{app}"; \
+  Flags: nowait postinstall skipifsilent; Description: "Launch VendorHub (adds icon to system tray)"; \
   Tasks: startservice
 
 [UninstallRun]
-Filename: "{app}\node\node.exe"; Parameters: "{app}\service-uninstall.js"; WorkingDir: "{app}"; \
-  Flags: runhidden waituntilterminated; StatusMsg: "Stopping and removing VendorHub service..."
+; Kill VendorHub tray process before uninstall
+Filename: "taskkill.exe"; Parameters: "/F /IM VendorHub.exe"; Flags: runhidden waituntilterminated; StatusMsg: "Stopping VendorHub..."
 
 [Code]
 procedure InitializeWizard;
