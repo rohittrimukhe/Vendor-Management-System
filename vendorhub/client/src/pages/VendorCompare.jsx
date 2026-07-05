@@ -130,7 +130,7 @@ export default function VendorCompare() {
                   onClick={() => toggle(v.id)}
                   style={{
                     padding: '12px 14px', borderRadius: 8, border: isSelected ? `2px solid ${BLUE}` : '2px solid #E8ECF0',
-                    cursor: 'pointer', background: isSelected ? '#F0F8FF' : '#fff', transition: 'all 0.15s',
+                    cursor: 'pointer', background: isSelected ? '#F0F8FF' : '#fff', transition: 'border-color 0.15s, background 0.15s',
                     display: 'flex', alignItems: 'center', gap: 10,
                   }}
                 >

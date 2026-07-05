@@ -175,7 +175,7 @@ export default function VendorList() {
         <div style={{ background: '#1C3C6E', borderRadius: 10, padding: '12px 18px', marginBottom: 12, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ color: '#fff', fontSize: 14, fontWeight: 600 }}>{selected.length} selected</span>
           <select value={bulkAction} onChange={e => { setBulkAction(e.target.value); setBulkValue(''); }}
-            style={{ padding: '7px 12px', borderRadius: 6, border: 'none', fontSize: 13, background: 'rgba(255,255,255,0.15)', color: '#fff', outline: 'none' }}>
+            style={{ padding: '7px 12px', borderRadius: 6, border: 'none', fontSize: 13, background: '#fff', color: '#1C3C6E', outline: 'none', fontWeight: 600 }}>
             <option value="">— Choose action —</option>
             <option value="status">Change Status</option>
             <option value="tier">Change Tier</option>
@@ -183,14 +183,14 @@ export default function VendorList() {
           </select>
           {bulkAction === 'status' && (
             <select value={bulkValue} onChange={e => setBulkValue(e.target.value)}
-              style={{ padding: '7px 12px', borderRadius: 6, border: 'none', fontSize: 13, background: 'rgba(255,255,255,0.15)', color: '#fff', outline: 'none' }}>
+              style={{ padding: '7px 12px', borderRadius: 6, border: 'none', fontSize: 13, background: '#fff', color: '#1C3C6E', outline: 'none', fontWeight: 600 }}>
               <option value="">— Select Status —</option>
               <option>Empanelled</option><option>In Evaluation</option><option>On Hold</option><option>Archived</option>
             </select>
           )}
           {bulkAction === 'tier' && (
             <select value={bulkValue} onChange={e => setBulkValue(e.target.value)}
-              style={{ padding: '7px 12px', borderRadius: 6, border: 'none', fontSize: 13, background: 'rgba(255,255,255,0.15)', color: '#fff', outline: 'none' }}>
+              style={{ padding: '7px 12px', borderRadius: 6, border: 'none', fontSize: 13, background: '#fff', color: '#1C3C6E', outline: 'none', fontWeight: 600 }}>
               <option value="">— Select Tier —</option>
               <option>Tier 1</option><option>Tier 2</option><option>Tier 3</option>
             </select>
@@ -272,9 +272,9 @@ export default function VendorList() {
                 <tr><td colSpan={9} style={{ padding: 40, textAlign: 'center', color: '#aaa', fontSize: 15 }}>No vendors found. <span onClick={() => navigate('/vendors/add')} style={{ color: '#29ABE2', cursor: 'pointer' }}>Add your first vendor →</span></td></tr>
               )}
               {vendors.map(v => (
-                <tr key={v.id} style={{ borderBottom: '1px solid #F0F4F8', transition: 'background 0.1s', background: selected.includes(v.id) ? '#EEF9FF' : '#fff' }}
+                <tr key={v.id} style={{ borderBottom: '1px solid #F0F4F8', background: selected.includes(v.id) ? '#EEF9FF' : '#fff' }}
                   onMouseEnter={e => { if (!selected.includes(v.id)) e.currentTarget.style.background = '#FAFBFC'; }}
-                  onMouseLeave={e => { if (!selected.includes(v.id)) e.currentTarget.style.background = '#fff'; }}>
+                  onMouseLeave={e => { if (!selected.includes(v.id)) e.currentTarget.style.background = selected.includes(v.id) ? '#EEF9FF' : '#fff'; }}>
                   <td style={{ padding: '12px 8px 12px 16px' }} onClick={e => e.stopPropagation()}>
                     <input type="checkbox" checked={selected.includes(v.id)} onChange={() => toggleSelect(v.id)} style={{ cursor: 'pointer' }} />
                   </td>
@@ -321,7 +321,7 @@ export default function VendorList() {
             </div>
           )}
           {vendors.map(v => (
-            <div key={v.id} onClick={() => navigate(`/vendors/${v.id}`)} style={{ background: '#fff', borderRadius: 12, padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s' }}
+            <div key={v.id} onClick={() => navigate(`/vendors/${v.id}`)} style={{ background: '#fff', borderRadius: 12, padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', cursor: 'pointer', transition: 'box-shadow 0.15s ease, transform 0.15s ease', willChange: 'transform' }}
               onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,0,0,0.10)'; }}
               onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)'; }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>

@@ -83,7 +83,7 @@ export default function Sidebar() {
     borderLeft: isActive(path) ? '3px solid #29ABE2' : '3px solid transparent',
     fontWeight: isActive(path) ? 600 : 400,
     fontSize: 14,
-    transition: 'all 0.15s',
+    transition: 'background 0.15s, color 0.15s',
     textDecoration: 'none',
   });
 

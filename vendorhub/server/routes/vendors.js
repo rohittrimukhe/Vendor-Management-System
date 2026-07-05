@@ -203,6 +203,55 @@ router.post('/import', requirePermission('Vendors', 'Edit'), csvUpload.single('f
   }
 });
 
+// Vendor comparison — must be before /:id routes
+router.get('/compare', requirePermission('Vendors', 'Read'), (req, res) => {
+  const ids = (req.query.ids || '').split(',').map(Number).filter(Boolean).slice(0, 4);
+  if (ids.length < 2) return res.status(400).json({ error: 'At least 2 vendor IDs required' });
+  const result = ids.map(id => {
+    const v = db.prepare('SELECT * FROM vendors WHERE id = ?').get(id);
+    if (!v) return null;
+    v.domains = db.prepare('SELECT domain FROM vendor_domains WHERE vendor_id = ?').all(id).map(r => r.domain);
+    v.tags = db.prepare('SELECT tag FROM vendor_tags WHERE vendor_id = ?').all(id).map(r => r.tag);
+    v.certifications = db.prepare('SELECT * FROM certifications WHERE vendor_id = ?').all(id);
+    v.active_contracts = db.prepare("SELECT COUNT(*) as c FROM contracts WHERE vendor_id = ? AND status = 'Active'").get(id).c;
+    v.total_spend = db.prepare("SELECT COALESCE(SUM(value),0) as s FROM contracts WHERE vendor_id = ?").get(id).s;
+    const perf = db.prepare("SELECT AVG(rating) as r, AVG(on_time_delivery) as d, AVG(support_quality) as q, AVG(price_competitiveness) as p FROM performance_reviews WHERE vendor_id = ?").get(id);
+    v.avg_rating = perf.r ? parseFloat(perf.r.toFixed(1)) : null;
+    v.avg_delivery = perf.d ? Math.round(perf.d) : null;
+    v.avg_quality = perf.q ? Math.round(perf.q) : null;
+    v.avg_price = perf.p ? Math.round(perf.p) : null;
+    const risk = computeRisk(id);
+    v.risk_score = risk.score;
+    v.risk_level = risk.level;
+    return v;
+  }).filter(Boolean);
+  res.json({ data: result });
+});
+
+// Dashboard stats — must be before /:id routes
+router.get('/stats/dashboard', (req, res) => {
+  try {
+    const total = db.prepare('SELECT COUNT(*) as c FROM vendors').get().c;
+    const empanelled = db.prepare("SELECT COUNT(*) as c FROM vendors WHERE empanelment_status='Empanelled'").get().c;
+    const inEval = db.prepare("SELECT COUNT(*) as c FROM vendors WHERE empanelment_status='In Evaluation'").get().c;
+    const expiring = db.prepare("SELECT COUNT(*) as c FROM contracts WHERE end_date BETWEEN date('now') AND date('now', '+90 days') AND status='Active'").get().c;
+    const domains = db.prepare(`
+      SELECT vd.domain, COUNT(DISTINCT vd.vendor_id) as count
+      FROM vendor_domains vd
+      GROUP BY vd.domain
+      ORDER BY count DESC LIMIT 10
+    `).all();
+    const recent = db.prepare('SELECT * FROM vendors ORDER BY created_at DESC LIMIT 5').all();
+    for (const v of recent) {
+      v.domains = db.prepare('SELECT domain FROM vendor_domains WHERE vendor_id = ?').all(v.id).map(r => r.domain);
+    }
+    res.json({ data: { total, empanelled, inEval, expiring, domains, recent } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/', requirePermission('Vendors', 'Edit'), auditLog('Vendor', 'CREATE', (req, body) => body?.data?.id), (req, res) => {
   try {
     const { name, gstin, website, address, geo_scope, empanelment_status, tier, vendor_type, summary, domains = [], tags = [], contacts = [] } = req.body;
@@ -334,58 +383,6 @@ router.post('/:id/certifications', (req, res) => {
 router.delete('/:id/certifications/:certId', (req, res) => {
   db.prepare('DELETE FROM certifications WHERE id = ? AND vendor_id = ?').run(req.params.certId, req.params.id);
   res.json({ data: { success: true } });
-});
-
-// Vendor comparison
-router.get('/compare', requirePermission('Vendors', 'Read'), (req, res) => {
-  const ids = (req.query.ids || '').split(',').map(Number).filter(Boolean).slice(0, 4);
-  if (ids.length < 2) return res.status(400).json({ error: 'At least 2 vendor IDs required' });
-  const result = ids.map(id => {
-    const v = db.prepare('SELECT * FROM vendors WHERE id = ?').get(id);
-    if (!v) return null;
-    v.domains = db.prepare('SELECT domain FROM vendor_domains WHERE vendor_id = ?').all(id).map(r => r.domain);
-    v.tags = db.prepare('SELECT tag FROM vendor_tags WHERE vendor_id = ?').all(id).map(r => r.tag);
-    v.certifications = db.prepare('SELECT * FROM certifications WHERE vendor_id = ?').all(id);
-    v.active_contracts = db.prepare("SELECT COUNT(*) as c FROM contracts WHERE vendor_id = ? AND status = 'Active'").get(id).c;
-    v.total_spend = db.prepare("SELECT COALESCE(SUM(value),0) as s FROM contracts WHERE vendor_id = ?").get(id).s;
-    const perf = db.prepare("SELECT AVG(rating) as r, AVG(on_time_delivery) as d, AVG(support_quality) as q, AVG(price_competitiveness) as p FROM performance_reviews WHERE vendor_id = ?").get(id);
-    v.avg_rating = perf.r ? parseFloat(perf.r.toFixed(1)) : null;
-    v.avg_delivery = perf.d ? Math.round(perf.d) : null;
-    v.avg_quality = perf.q ? Math.round(perf.q) : null;
-    v.avg_price = perf.p ? Math.round(perf.p) : null;
-    const risk = computeRisk(id);
-    v.risk_score = risk.score;
-    v.risk_level = risk.level;
-    return v;
-  }).filter(Boolean);
-  res.json({ data: result });
-});
-
-// Dashboard stats
-router.get('/stats/dashboard', (req, res) => {
-  try {
-    const total = db.prepare('SELECT COUNT(*) as c FROM vendors').get().c;
-    const empanelled = db.prepare("SELECT COUNT(*) as c FROM vendors WHERE empanelment_status='Empanelled'").get().c;
-    const inEval = db.prepare("SELECT COUNT(*) as c FROM vendors WHERE empanelment_status='In Evaluation'").get().c;
-    const expiring = db.prepare("SELECT COUNT(*) as c FROM contracts WHERE end_date BETWEEN date('now') AND date('now', '+90 days') AND status='Active'").get().c;
-
-    const domains = db.prepare(`
-      SELECT vd.domain, COUNT(DISTINCT vd.vendor_id) as count
-      FROM vendor_domains vd
-      GROUP BY vd.domain
-      ORDER BY count DESC LIMIT 10
-    `).all();
-
-    const recent = db.prepare('SELECT * FROM vendors ORDER BY created_at DESC LIMIT 5').all();
-    for (const v of recent) {
-      v.domains = db.prepare('SELECT domain FROM vendor_domains WHERE vendor_id = ?').all(v.id).map(r => r.domain);
-    }
-
-    res.json({ data: { total, empanelled, inEval, expiring, domains, recent } });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
 });
 
 // ─── Vendor Visibility ───────────────────────────────────────────────────────

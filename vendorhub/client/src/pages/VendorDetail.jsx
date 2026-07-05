@@ -284,7 +284,8 @@ export default function VendorDetail() {
             {vendor.risk_level && (() => {
               const rc = { Low: '#27AE60', Medium: '#F39C12', High: '#E67E22', Critical: '#E74C3C' };
               const rb = { Low: '#F0FFF4', Medium: '#FFFBF0', High: '#FFF3E0', Critical: '#FFF5F5' };
-              return <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, color: rc[vendor.risk_level], background: rb[vendor.risk_level] }}>⚡ {vendor.risk_level} Risk</span>;
+              const tooltip = `Risk Score: ${vendor.risk_score}/100\nFactors: empanelment status, tier, contract activity, performance reviews, expired certifications.\nLow <20 · Medium 20–39 · High 40–64 · Critical ≥65`;
+              return <span title={tooltip} style={{ padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, color: rc[vendor.risk_level], background: rb[vendor.risk_level], cursor: 'help' }}>⚡ {vendor.risk_level} Risk ({vendor.risk_score}/100)</span>;
             })()}
             {vendor.approval_status === 'pending_review' && <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, color: '#F39C12', background: '#FFFBF0' }}>⏳ Pending Approval</span>}
             {vendor.approval_status === 'rejected' && <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, color: '#E74C3C', background: '#FFF5F5' }}>✗ Rejected</span>}
