@@ -102,29 +102,44 @@ export default function Sidebar() {
       overflowY: 'auto',
     }}>
       {/* Logo */}
-      <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {logoUrl ? (
-            <img
-              src={logoUrl}
-              alt="Company Logo"
-              style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'contain', background: '#fff', flexShrink: 0, padding: 2 }}
-              onError={() => setLogoUrl(null)}
-            />
-          ) : (
+      {logoUrl ? (
+        /* ── Logo uploaded: full-width image, text below ── */
+        <div style={{ padding: '16px 16px 14px', borderBottom: '1px solid rgba(255,255,255,0.1)', textAlign: 'center' }}>
+          <img
+            src={logoUrl}
+            alt="Company Logo"
+            style={{
+              display: 'block',
+              width: '100%',         /* fill the 208px content area */
+              maxHeight: 80,         /* never taller than 80px */
+              objectFit: 'contain',  /* show full image, no cropping */
+              objectPosition: 'center',
+              borderRadius: 8,
+            }}
+            onError={() => setLogoUrl(null)}
+          />
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontFamily: 'Montserrat, sans-serif', fontWeight: 700, fontSize: 14, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{companyName}</div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', marginTop: 1 }}>LRS Services Pvt Ltd</div>
+          </div>
+        </div>
+      ) : (
+        /* ── No logo: compact row with VH badge ── */
+        <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{
               width: 44, height: 44, borderRadius: 10, background: '#29ABE2',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontFamily: 'Montserrat, sans-serif', fontWeight: 700, fontSize: 18, color: '#fff',
               flexShrink: 0,
             }}>VH</div>
-          )}
-          <div style={{ overflow: 'hidden' }}>
-            <div style={{ fontFamily: 'Montserrat, sans-serif', fontWeight: 700, fontSize: 15, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{companyName}</div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 1 }}>LRS Services Pvt Ltd</div>
+            <div style={{ overflow: 'hidden' }}>
+              <div style={{ fontFamily: 'Montserrat, sans-serif', fontWeight: 700, fontSize: 15, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{companyName}</div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 1 }}>LRS Services Pvt Ltd</div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Main Nav */}
       <nav style={{ flex: 1, paddingTop: 12 }}>
