@@ -152,6 +152,42 @@ router.get('/export', requirePermission('Vendors', 'Read'), (req, res) => {
   res.send(rows.join('\n'));
 });
 
+// CSV Template download — must be before /:id routes
+const TEMPLATE_VERSION = '2025-07-05';
+router.get('/import/template', requirePermission('Vendors', 'Read'), (req, res) => {
+  const header = ['name','gstin','website','address','geo_scope','empanelment_status','tier','vendor_type','summary','domains','tags','added_date'];
+  const sample = [
+    'Acme Technologies Pvt Ltd',
+    '27AABCU9603R1ZX',
+    'https://acme.example.com',
+    '101 Tech Park, Mumbai 400001',
+    'National',
+    'In Evaluation',
+    'Tier 2',
+    'IT Services',
+    'End-to-end IT solutions and managed services',
+    'ERP|Cloud|Security',
+    'preferred|shortlisted',
+    new Date().toISOString().split('T')[0],
+  ];
+  const csv = [
+    `# VendorHub Import Template v${TEMPLATE_VERSION}`,
+    '# Lines starting with # are comments and will be ignored during import',
+    '# Required: name | Optional: all other columns',
+    '# empanelment_status: Empanelled | In Evaluation | On Hold | Archived (default: In Evaluation)',
+    '# tier: Tier 1 | Tier 2 | Tier 3 (default: Tier 2)',
+    '# vendor_type: IT Services | IT Products | Consulting | Infrastructure | Cloud Services | Managed Services | Other',
+    '# domains/tags: separate multiple values with pipe (|)  e.g. ERP|Cloud|Security',
+    '# added_date: YYYY-MM-DD format (default: today)',
+    header.join(','),
+    sample.map(v => `"${v}"`).join(','),
+  ].join('\n');
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="vendorhub-import-template-${TEMPLATE_VERSION}.csv"`);
+  res.setHeader('X-Template-Version', TEMPLATE_VERSION);
+  res.send(csv);
+});
+
 // CSV Import
 const multer = require('multer');
 const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -159,45 +195,103 @@ router.post('/import', requirePermission('Vendors', 'Edit'), csvUpload.single('f
   try {
     if (!req.file) return res.status(400).json({ error: 'CSV file required' });
     const text = req.file.buffer.toString('utf-8');
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-    if (lines.length < 2) return res.status(400).json({ error: 'CSV must have header + at least one data row' });
+    // Strip comment lines (# prefix) before splitting
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+    if (lines.length < 2) return res.status(400).json({ error: 'CSV must have a header row + at least one data row' });
+
+    const VALID_STATUS = new Set(['Empanelled', 'In Evaluation', 'On Hold', 'Archived']);
+    const VALID_TIER = new Set(['Tier 1', 'Tier 2', 'Tier 3']);
+    const VALID_TYPE = new Set(['IT Services', 'IT Products', 'Consulting', 'Infrastructure', 'Cloud Services', 'Managed Services', 'Other']);
 
     const header = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim().toLowerCase());
+    if (!header.includes('name')) return res.status(400).json({ error: "CSV header must include a 'name' column" });
+
     const user = db.prepare('SELECT username FROM users WHERE id = ?').get(req.session.userId);
     const today = new Date().toISOString().split('T')[0];
-    let imported = 0, skipped = 0;
 
     const insertVendor = db.prepare(`
       INSERT INTO vendors (name, gstin, website, address, geo_scope, empanelment_status, tier, vendor_type, summary, logo_initial, logo_color, added_by, added_date)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
+    let imported = 0;
+    const logs = [];
+
     const importAll = db.transaction(() => {
       for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].match(/(".*?"|[^,]+)(?=,|$)/g) || [];
+        const rowNum = i + 1; // 1-indexed, accounting for header
+        // Parse CSV fields (handles quoted fields with commas inside)
+        const cols = [];
+        let cur = '', inQuote = false;
+        for (const ch of lines[i] + ',') {
+          if (ch === '"') { inQuote = !inQuote; }
+          else if (ch === ',' && !inQuote) { cols.push(cur.trim()); cur = ''; }
+          else { cur += ch; }
+        }
         const row = {};
         header.forEach((h, idx) => { row[h] = (cols[idx] || '').replace(/^"|"$/g, '').trim(); });
-        if (!row.name) { skipped++; continue; }
-        const color = COLORS[Math.floor(Math.random() * COLORS.length)];
-        const result = insertVendor.run(
-          row.name, row.gstin || null, row.website || null, row.address || null,
-          row.geo_scope || null, row.empanelment_status || 'In Evaluation',
-          row.tier || 'Tier 2', row.vendor_type || null, row.summary || null,
-          row.name[0].toUpperCase(), color, user?.username || 'import', row.added_date || today
-        );
-        if (row.domains) {
-          const ins = db.prepare('INSERT INTO vendor_domains (vendor_id, domain) VALUES (?, ?)');
-          row.domains.split('|').filter(Boolean).forEach(d => ins.run(result.lastInsertRowid, d.trim()));
+
+        // Validate required
+        if (!row.name) {
+          logs.push({ row: rowNum, status: 'failed', name: row.name || '(empty)', reason: "Required column 'name' is missing or empty" });
+          continue;
         }
-        if (row.tags) {
-          const ins = db.prepare('INSERT INTO vendor_tags (vendor_id, tag) VALUES (?, ?)');
-          row.tags.split('|').filter(Boolean).forEach(t => ins.run(result.lastInsertRowid, t.trim()));
+
+        // Check duplicate name
+        const existing = db.prepare('SELECT id FROM vendors WHERE LOWER(name) = LOWER(?)').get(row.name);
+        if (existing) {
+          logs.push({ row: rowNum, status: 'failed', name: row.name, reason: `Vendor '${row.name}' already exists (ID ${existing.id})` });
+          continue;
         }
-        imported++;
+
+        // Validate optional enum fields — warn but use default
+        const warnings = [];
+        let status = row.empanelment_status;
+        if (status && !VALID_STATUS.has(status)) { warnings.push(`empanelment_status '${status}' not recognised — defaulting to 'In Evaluation'`); status = ''; }
+        let tier = row.tier;
+        if (tier && !VALID_TIER.has(tier)) { warnings.push(`tier '${tier}' not recognised — defaulting to 'Tier 2'`); tier = ''; }
+        let vtype = row.vendor_type;
+        if (vtype && !VALID_TYPE.has(vtype)) { warnings.push(`vendor_type '${vtype}' not recognised — will be stored as-is`); }
+
+        // Validate added_date format
+        let addedDate = row.added_date;
+        if (addedDate && !/^\d{4}-\d{2}-\d{2}$/.test(addedDate)) {
+          warnings.push(`added_date '${addedDate}' is not YYYY-MM-DD format — defaulting to today`);
+          addedDate = '';
+        }
+
+        try {
+          const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+          const result = insertVendor.run(
+            row.name, row.gstin || null, row.website || null, row.address || null,
+            row.geo_scope || null, status || 'In Evaluation',
+            tier || 'Tier 2', vtype || null, row.summary || null,
+            row.name[0].toUpperCase(), color, user?.username || 'import', addedDate || today
+          );
+          const vendorId = result.lastInsertRowid;
+          if (row.domains) {
+            const ins = db.prepare('INSERT INTO vendor_domains (vendor_id, domain) VALUES (?, ?)');
+            row.domains.split('|').filter(Boolean).forEach(d => ins.run(vendorId, d.trim()));
+          }
+          if (row.tags) {
+            const ins = db.prepare('INSERT INTO vendor_tags (vendor_id, tag) VALUES (?, ?)');
+            row.tags.split('|').filter(Boolean).forEach(t => ins.run(vendorId, t.trim()));
+          }
+          imported++;
+          logs.push({
+            row: rowNum, status: warnings.length ? 'imported_with_warnings' : 'imported',
+            name: row.name, reason: warnings.length ? warnings.join('; ') : null,
+          });
+        } catch (insertErr) {
+          logs.push({ row: rowNum, status: 'failed', name: row.name, reason: insertErr.message });
+        }
       }
     });
     importAll();
-    res.json({ data: { imported, skipped, total: lines.length - 1 } });
+
+    const failed = logs.filter(l => l.status === 'failed').length;
+    const warned = logs.filter(l => l.status === 'imported_with_warnings').length;
+    res.json({ data: { imported, failed, warned, total: lines.length - 1, logs } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

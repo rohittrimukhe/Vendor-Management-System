@@ -23,9 +23,6 @@ export default function VendorList() {
   const navigate = useNavigate();
   const { can } = useContext(AuthContext);
   const [searchParams] = useSearchParams();
-  const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState(null);
-  const importRef = React.useRef();
   const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -105,22 +102,6 @@ export default function VendorList() {
     localStorage.setItem('vendorhub_saved_views', JSON.stringify(updated));
   };
 
-  const handleImport = async (file) => {
-    if (!file) return;
-    setImporting(true);
-    setImportResult(null);
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const res = await fetch('/api/vendors/import', { method: 'POST', body: fd, credentials: 'include' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Import failed');
-      setImportResult(data.data || data);
-      loadVendors();
-    } catch (e) { setImportResult({ error: e.message }); }
-    setImporting(false);
-  };
-
   const selStyle = { padding: '8px 12px', border: '1px solid #DDE2E8', borderRadius: 6, fontSize: 13, background: '#fff', outline: 'none' };
   const btnStyle = (active) => ({ padding: '8px 12px', border: '1px solid #DDE2E8', borderRadius: 6, background: active ? '#1C3C6E' : '#fff', color: active ? '#fff' : '#555', cursor: 'pointer', fontSize: 13 });
 
@@ -156,8 +137,7 @@ export default function VendorList() {
           <button onClick={handleExport} style={{ padding: '8px 14px', border: '1px solid #DDE2E8', borderRadius: 6, background: '#fff', color: '#555', cursor: 'pointer', fontSize: 13 }} title="Export as CSV">⬇ Export CSV</button>
           {can('Vendors', 'Edit') && (
             <>
-              <button onClick={() => importRef.current?.click()} disabled={importing} style={{ padding: '8px 14px', border: '1px solid #DDE2E8', borderRadius: 6, background: '#fff', color: '#555', cursor: 'pointer', fontSize: 13 }} title="Import from CSV">⬆ {importing ? 'Importing...' : 'Import CSV'}</button>
-              <input ref={importRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={e => e.target.files[0] && handleImport(e.target.files[0])} />
+              <button onClick={() => navigate('/vendors/import')} style={{ padding: '8px 14px', border: '1px solid #DDE2E8', borderRadius: 6, background: '#fff', color: '#555', cursor: 'pointer', fontSize: 13 }} title="Import vendors from CSV">⬆ Import CSV</button>
               <button onClick={() => navigate('/vendors/compare')} style={{ padding: '8px 14px', border: '1px solid #DDE2E8', borderRadius: 6, background: '#fff', color: '#1C3C6E', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>⚖ Compare</button>
               <button
                 onClick={() => navigate('/vendors/add')}
@@ -241,12 +221,6 @@ export default function VendorList() {
         </div>
       )}
 
-      {importResult && (
-        <div style={{ background: importResult.error ? '#FFF5F5' : '#F0FFF4', border: `1px solid ${importResult.error ? '#FFCDD2' : '#C8E6C9'}`, borderRadius: 8, padding: '10px 16px', marginBottom: 12, fontSize: 13, color: importResult.error ? '#E74C3C' : '#27AE60', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>{importResult.error ? `Import failed: ${importResult.error}` : `Import complete: ${importResult.imported} vendors added, ${importResult.skipped} skipped`}</span>
-          <button onClick={() => setImportResult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa' }}>✕</button>
-        </div>
-      )}
 
       {/* Count */}
       <div style={{ fontSize: 13, color: '#888', marginBottom: 12, paddingLeft: 4 }}>

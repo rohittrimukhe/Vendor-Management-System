@@ -17,6 +17,7 @@ import Backup from './pages/Backup.jsx';
 import Help from './pages/Help.jsx';
 import AuditLog from './pages/AuditLog.jsx';
 import VendorCompare from './pages/VendorCompare.jsx';
+import VendorImport from './pages/VendorImport.jsx';
 import SpendAnalytics from './pages/SpendAnalytics.jsx';
 import MyTasks from './pages/MyTasks.jsx';
 import ScoringCriteria from './pages/ScoringCriteria.jsx';
@@ -90,6 +91,7 @@ function AppRoutes() {
         <Route path="/vendors" element={<ProtectedRoute><VendorList /></ProtectedRoute>} />
         <Route path="/vendors/add" element={<ProtectedRoute><AddVendor /></ProtectedRoute>} />
         <Route path="/vendors/compare" element={<ProtectedRoute><VendorCompare /></ProtectedRoute>} />
+        <Route path="/vendors/import" element={<ProtectedRoute><VendorImport /></ProtectedRoute>} />
         <Route path="/vendors/:id" element={<ProtectedRoute><VendorDetail /></ProtectedRoute>} />
         <Route path="/analytics" element={<ProtectedRoute><SpendAnalytics /></ProtectedRoute>} />
         <Route path="/tasks" element={<ProtectedRoute><MyTasks /></ProtectedRoute>} />
