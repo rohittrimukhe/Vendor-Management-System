@@ -32,6 +32,28 @@ export default function Sidebar() {
   const isAdmin = auth?.isAdmin || false;
   const user = auth?.user;
   const [pendingApprovals, setPendingApprovals] = useState(0);
+  const [logoUrl, setLogoUrl] = useState(null);
+  const [companyName, setCompanyName] = useState('VendorHub');
+
+  useEffect(() => {
+    api.get('/api/settings').then(rows => {
+      const map = {};
+      (rows || []).forEach(r => { map[r.key] = r.value; });
+      if (map.company_logo) setLogoUrl('/uploads/logo/' + map.company_logo + '?t=' + Date.now());
+      if (map.company_name) setCompanyName(map.company_name);
+    }).catch(() => {});
+    // Listen for logo updates from Settings page
+    const handler = () => {
+      api.get('/api/settings').then(rows => {
+        const map = {};
+        (rows || []).forEach(r => { map[r.key] = r.value; });
+        setLogoUrl(map.company_logo ? '/uploads/logo/' + map.company_logo + '?t=' + Date.now() : null);
+        if (map.company_name) setCompanyName(map.company_name);
+      }).catch(() => {});
+    };
+    window.addEventListener('vh:logo-updated', handler);
+    return () => window.removeEventListener('vh:logo-updated', handler);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -80,16 +102,25 @@ export default function Sidebar() {
       overflowY: 'auto',
     }}>
       {/* Logo */}
-      <div style={{ padding: '24px 20px 20px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+      <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            width: 44, height: 44, borderRadius: 10, background: '#29ABE2',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: 'Montserrat, sans-serif', fontWeight: 700, fontSize: 18, color: '#fff',
-            flexShrink: 0,
-          }}>VH</div>
-          <div>
-            <div style={{ fontFamily: 'Montserrat, sans-serif', fontWeight: 700, fontSize: 16, color: '#fff' }}>VendorHub</div>
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt="Company Logo"
+              style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'contain', background: '#fff', flexShrink: 0, padding: 2 }}
+              onError={() => setLogoUrl(null)}
+            />
+          ) : (
+            <div style={{
+              width: 44, height: 44, borderRadius: 10, background: '#29ABE2',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontFamily: 'Montserrat, sans-serif', fontWeight: 700, fontSize: 18, color: '#fff',
+              flexShrink: 0,
+            }}>VH</div>
+          )}
+          <div style={{ overflow: 'hidden' }}>
+            <div style={{ fontFamily: 'Montserrat, sans-serif', fontWeight: 700, fontSize: 15, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{companyName}</div>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginTop: 1 }}>LRS Services Pvt Ltd</div>
           </div>
         </div>

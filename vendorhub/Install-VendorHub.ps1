@@ -2,7 +2,6 @@
 # Compatible with Windows PowerShell 5 on Windows 11
 
 $ErrorActionPreference = "Continue"
-$Port = 8080
 $InstallDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 # Force UTF-8 output
@@ -41,6 +40,20 @@ function FAIL($text) {
 
 # =============================================================================
 Show-Banner
+
+# Ask for port
+Write-Host "  Port Configuration" -ForegroundColor Yellow
+Write-Host "  VendorHub runs a local web server. Default port is 8080." -ForegroundColor Gray
+Write-Host "  Press Enter to use 8080, or type a different port number (1024-65535)." -ForegroundColor Gray
+Write-Host ""
+$portInput = Read-Host "  Port number [8080]"
+if ($portInput -match '^\d+$' -and [int]$portInput -ge 1024 -and [int]$portInput -le 65535) {
+    $Port = [int]$portInput
+} else {
+    $Port = 8080
+}
+Write-Host "  Using port: $Port" -ForegroundColor Cyan
+Write-Host ""
 
 # STEP 1 - Check files
 # =============================================================================
@@ -172,6 +185,28 @@ if (-not (Test-Path "$clientDir\dist\index.html")) {
 OK "Web interface built successfully"
 
 Set-Location $InstallDir
+
+# Write port to settings DB so server uses chosen port on first run
+if ($Port -ne 8080) {
+    INFO "Writing port $Port to database..."
+    try {
+        $sqliteExe = Get-Command sqlite3 -ErrorAction SilentlyContinue
+        if ($sqliteExe) {
+            $dbPath = "$InstallDir\data\vendorhub.db"
+            if (Test-Path $dbPath) {
+                sqlite3 $dbPath "INSERT OR REPLACE INTO settings (key, value) VALUES ('server_port', '$Port');"
+                OK "Port $Port saved to database"
+            }
+        } else {
+            # No sqlite3 CLI - use node to write the setting
+            $nodeScript = "const d=require('better-sqlite3')('$($dbPath -replace '\\','\\\\')');d.prepare(\"INSERT OR REPLACE INTO settings(key,value)VALUES('server_port',?)\").run('$Port');d.close();"
+            $proc = Start-Process -FilePath "node.exe" -ArgumentList "-e `"$nodeScript`"" -WorkingDirectory $InstallDir -Wait -PassThru -NoNewWindow
+            if ($proc.ExitCode -eq 0) { OK "Port $Port saved to database" } else { WARN "Could not write port to DB - server will use default 8080 until changed in Settings" }
+        }
+    } catch {
+        WARN "Could not write port to database: $_"
+    }
+}
 
 # Record installed SHA so update checker knows current version
 INFO "Recording installed version SHA..."

@@ -1,4 +1,7 @@
 const express = require('express');
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
 const { db } = require('../db');
 const requireAuth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/permissions');
@@ -6,13 +9,32 @@ const router = express.Router();
 
 router.use(requireAuth);
 
-// Any authenticated user can read public settings
+const LOGO_DIR = path.join(__dirname, '..', '..', 'uploads', 'logo');
+fs.mkdirSync(LOGO_DIR, { recursive: true });
+
+const logoStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, LOGO_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase() || '.png';
+    cb(null, 'company-logo-' + Date.now() + ext);
+  },
+});
+const logoUpload = multer({
+  storage: logoStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (/^image\/(png|jpeg|jpg|gif|svg\+xml|webp)$/.test(file.mimetype)) cb(null, true);
+    else cb(new Error('Only image files are allowed'));
+  },
+});
+
+// Any authenticated user reads public settings
 router.get('/', (req, res) => {
   const rows = db.prepare("SELECT key, value FROM settings WHERE key NOT IN ('session_secret','initialized')").all();
   res.json({ data: rows });
 });
 
-// Only admins can change settings
+// Only admins change settings
 router.put('/', requireAdmin, (req, res) => {
   const { key, value } = req.body;
   if (!key) return res.status(400).json({ error: 'key required' });
@@ -23,13 +45,46 @@ router.put('/', requireAdmin, (req, res) => {
 router.put('/bulk', requireAdmin, (req, res) => {
   const { settings } = req.body;
   const upsert = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
-  const doIt = db.transaction(() => {
-    for (const s of settings) upsert.run(s.key, s.value);
-  });
-  doIt();
+  db.transaction(() => { for (const s of settings) upsert.run(s.key, s.value); })();
   res.json({ data: { success: true } });
 });
 
+// Upload company logo
+router.post('/logo', requireAdmin, (req, res) => {
+  logoUpload.single('logo')(req, res, err => {
+    if (err) return res.status(400).json({ error: err.message });
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    // Remove old logo file if different name
+    try {
+      const old = db.prepare("SELECT value FROM settings WHERE key='company_logo'").get()?.value;
+      if (old) {
+        const oldPath = path.join(LOGO_DIR, old);
+        if (fs.existsSync(oldPath) && old !== req.file.filename) fs.unlinkSync(oldPath);
+      }
+    } catch {}
+
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('company_logo', ?)").run(req.file.filename);
+    res.json({ data: { filename: req.file.filename, url: '/uploads/logo/' + req.file.filename } });
+  });
+});
+
+// Delete company logo
+router.delete('/logo', requireAdmin, (req, res) => {
+  try {
+    const old = db.prepare("SELECT value FROM settings WHERE key='company_logo'").get()?.value;
+    if (old) {
+      const oldPath = path.join(LOGO_DIR, old);
+      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+    }
+    db.prepare("DELETE FROM settings WHERE key='company_logo'").run();
+    res.json({ data: { success: true } });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Test SMTP email
 router.post('/test-email', requireAdmin, async (req, res) => {
   try {
     const nodemailer = require('nodemailer');

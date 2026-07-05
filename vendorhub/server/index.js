@@ -8,13 +8,22 @@ const cron = require('node-cron');
 const { db, isFirstRun } = require('./db');
 
 const app = express();
-const PORT = process.env.PORT || 8080;
 
 // Ensure dirs exist
-['data', 'uploads', 'backups'].forEach(dir => {
+['data', 'uploads', 'uploads/logo', 'backups'].forEach(dir => {
   const p = path.join(__dirname, '..', dir);
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 });
+
+// PORT: settable via Settings UI (stored in DB) or env var, fallback 8080
+const PORT = (() => {
+  try {
+    const r = db.prepare("SELECT value FROM settings WHERE key='server_port'").get();
+    const p = parseInt(r?.value);
+    if (p && p > 0 && p < 65536) return p;
+  } catch {}
+  return parseInt(process.env.PORT) || 8080;
+})();
 
 // Middleware
 app.use(cors({ origin: true, credentials: true }));
@@ -109,6 +118,7 @@ app.get('/api/dashboard/stats', require('./middleware/auth'), (req, res) => {
 });
 
 // Static files
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 const clientDist = path.join(__dirname, '..', 'client', 'dist');
 if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
@@ -166,9 +176,12 @@ function scheduleEmailAlerts() {
       const from = getSetting('smtp_from') || user;
       if (!host || !user || !pass) return;
 
-      const adminEmails = db.prepare("SELECT email FROM users WHERE group_id = 1 AND email IS NOT NULL AND email != ''").all().map(r => r.email);
+      // Collect all active users with an email (admins + any user who set their profile email)
+      const allUserEmails = db.prepare("SELECT email FROM users WHERE status='active' AND email IS NOT NULL AND email != ''").all().map(r => r.email);
       const extraEmail = getSetting('admin_email');
-      if (extraEmail && !adminEmails.includes(extraEmail)) adminEmails.push(extraEmail);
+      if (extraEmail && !allUserEmails.includes(extraEmail)) allUserEmails.push(extraEmail);
+      // De-duplicate
+      const adminEmails = [...new Set(allUserEmails)];
       if (!adminEmails.length) return;
 
       const nodemailer = require('nodemailer');

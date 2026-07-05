@@ -46,4 +46,37 @@ router.get('/me', (req, res) => {
   res.json({ data: { ...user, group, isAdmin, permissions } });
 });
 
+// Update own profile (name, email, password)
+router.put('/profile', async (req, res) => {
+  if (!req.session?.userId) return res.status(401).json({ error: 'Unauthorized' });
+  const { name, email, currentPassword, newPassword } = req.body;
+  try {
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const updates = {};
+    if (name && name.trim()) updates.name = name.trim();
+    if (email !== undefined) updates.email = email.trim() || null;
+
+    if (newPassword) {
+      if (!currentPassword) return res.status(400).json({ error: 'Current password required to set a new password' });
+      const match = await bcrypt.compare(currentPassword, user.password_hash);
+      if (!match) return res.status(400).json({ error: 'Current password is incorrect' });
+      if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
+      updates.password_hash = await bcrypt.hash(newPassword, 10);
+    }
+
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'Nothing to update' });
+
+    const setClauses = Object.keys(updates).map(k => `${k} = ?`).join(', ');
+    db.prepare(`UPDATE users SET ${setClauses} WHERE id = ?`).run(...Object.values(updates), user.id);
+
+    const updated = db.prepare('SELECT id, name, email, username, group_id, department, status FROM users WHERE id = ?').get(user.id);
+    res.json({ data: updated });
+  } catch (e) {
+    if (e.message?.includes('UNIQUE')) return res.status(400).json({ error: 'That email is already used by another account' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;
