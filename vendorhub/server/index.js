@@ -46,6 +46,16 @@ app.use(session({
   cookie: { maxAge: 8 * 60 * 60 * 1000, httpOnly: true }
 }));
 
+// Public branding endpoint — no auth required (used by login page)
+app.get('/api/branding', (req, res) => {
+  const getSetting = (key) => db.prepare("SELECT value FROM settings WHERE key=?").get(key)?.value || null;
+  res.json({
+    company_logo: getSetting('company_logo'),
+    company_name: getSetting('company_name') || 'VendorHub',
+    logo_url: getSetting('company_logo') ? '/uploads/logo/' + getSetting('company_logo') : null,
+  });
+});
+
 // API Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/setup', require('./routes/setup'));
