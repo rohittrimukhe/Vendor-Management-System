@@ -12,11 +12,41 @@ const router = express.Router();
 router.use(requireAuth);
 router.use(requireAdmin);
 
-const ROOT_DIR = path.resolve(__dirname, '..', '..', '..');  // repo root
-const APP_DIR  = path.resolve(__dirname, '..', '..');        // vendorhub/
-const PKG      = require('../../package.json');
+const ROOT_DIR  = path.resolve(__dirname, '..', '..', '..');  // repo root
+const APP_DIR   = path.resolve(__dirname, '..', '..');        // vendorhub/
+const DATA_DIR  = path.join(APP_DIR, 'data');
+const SHA_FILE  = path.join(DATA_DIR, 'installed_sha.txt');
+const PKG_FILE  = path.join(APP_DIR, 'package.json');
 const GITHUB_REPO = 'rohittrimukhe/Vendor-Management-System';
-const IS_WIN   = process.platform === 'win32';
+const IS_WIN    = process.platform === 'win32';
+
+// ─── SHA / version helpers ────────────────────────────────────────────────────
+
+function getPkg() {
+  try { return JSON.parse(fs.readFileSync(PKG_FILE, 'utf8')); } catch { return {}; }
+}
+
+function getInstalledSha() {
+  try { return fs.readFileSync(SHA_FILE, 'utf8').trim().slice(0, 7); } catch { return null; }
+}
+
+function saveInstalledSha(fullSha) {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(SHA_FILE, fullSha.slice(0, 7));
+  } catch {}
+}
+
+function bumpVersion() {
+  try {
+    const pkg = getPkg();
+    const parts = (pkg.version || '1.0.0').split('.').map(Number);
+    parts[2] = (parts[2] || 0) + 1;
+    pkg.version = parts.join('.');
+    fs.writeFileSync(PKG_FILE, JSON.stringify(pkg, null, 2) + '\n');
+    return pkg.version;
+  } catch { return null; }
+}
 
 // ─── Detect Node / npm paths ──────────────────────────────────────────────────
 
@@ -121,9 +151,13 @@ router.get('/current', async (req, res) => {
     // git not installed — that's OK, we use ZIP method
   }
 
+  const pkg = getPkg();
+  const installedSha = getInstalledSha();
   res.json({ data: {
-    version: PKG.version,
+    version: pkg.version || '1.0.0',
     ...(gitInfo || {}),
+    sha: gitInfo?.sha || installedSha || null,
+    installedSha,
     hasGit: !!gitInfo,
     npm: NPM,
     platform: process.platform,
@@ -166,25 +200,33 @@ router.get('/check', async (req, res) => {
     }));
 
     // Determine if update is available
+    // Priority: installed_sha.txt file > git HEAD
+    // (ZIP installs have no .git; after an apply, the file is always written)
     let upToDate = false;
-    let localSha = null;
+    let localSha = getInstalledSha();   // file-based, null on first install
+    let hasGit = false;
     try {
-      localSha = (await run('git rev-parse --short HEAD', ROOT_DIR));
-      const remoteSha = latestCommit?.sha;
-      upToDate = remoteSha && localSha === remoteSha;
-    } catch {
-      // No git — can't compare SHAs; show latest available
-      upToDate = false;
+      const gitSha = await run('git rev-parse --short HEAD', ROOT_DIR);
+      hasGit = true;
+      // Only use git sha if no file-based sha exists
+      if (!localSha) localSha = gitSha;
+    } catch {}
+
+    const remoteSha = latestCommit?.sha;
+    if (remoteSha && localSha) {
+      upToDate = remoteSha === localSha;
     }
+    // If we have no localSha at all, we can't tell — assume update available
+    const pkg = getPkg();
 
     res.json({ data: {
       localSha,
-      hasGit: !!localSha,
+      hasGit,
       upToDate,
       latestCommit,
       recentCommits,
       release: latestRelease,
-      currentVersion: PKG.version,
+      currentVersion: pkg.version || '1.0.0',
     }});
   } catch (e) {
     res.status(500).json({ error: 'Cannot reach GitHub: ' + e.message });
@@ -296,6 +338,15 @@ router.post('/apply', async (req, res) => {
     log('Building web interface...');
     await run(`${NPM} run build`, clientDir);
     log('Web interface rebuilt', 'success');
+
+    // Save the installed SHA so next check knows we're up to date
+    const headR = await httpsJSON(`https://api.github.com/repos/${GITHUB_REPO}/commits/HEAD`).catch(() => null);
+    if (headR?.body?.sha) {
+      saveInstalledSha(headR.body.sha);
+      log(`Saved installed SHA: ${headR.body.sha.slice(0, 7)}`, 'success');
+    }
+    const newVer = bumpVersion();
+    if (newVer) log(`Version bumped to v${newVer}`, 'success');
 
     log('Update complete! Restarting server...', 'success');
     log('RESTART_REQUIRED', 'restart');
