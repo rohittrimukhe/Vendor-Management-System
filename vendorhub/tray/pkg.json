@@ -1,7 +1,0 @@
-{
-  "assets": [
-    "node_modules/systray2/traybin/**/*"
-  ],
-  "scripts": [],
-  "outputPath": "../dist"
-}
