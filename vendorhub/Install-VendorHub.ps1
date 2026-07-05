@@ -219,7 +219,7 @@ if (Test-Path $trayDir) {
     INFO "Installing tray dependencies (systray2, pkg)..."
     $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm install 2>&1" -WorkingDirectory $trayDir -Wait -PassThru -NoNewWindow
     if ($proc.ExitCode -ne 0) {
-        WARN "Tray npm install failed — VendorHub.exe will not be built. You can still use Start-VendorHub.bat."
+        WARN "Tray npm install failed - VendorHub.exe will not be built. You can still use Start-VendorHub.bat."
     } else {
         INFO "Building VendorHub.exe (compiling to single executable)..."
         $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm run build 2>&1" -WorkingDirectory $trayDir -Wait -PassThru -NoNewWindow
@@ -228,11 +228,11 @@ if (Test-Path $trayDir) {
             Copy-Item $builtExe $exeDest -Force
             OK "VendorHub.exe built and placed at $exeDest"
         } else {
-            WARN "Build step failed. VendorHub.exe not available — will use bat fallback."
+            WARN "Build step failed. VendorHub.exe not available - will use bat fallback."
         }
     }
 } else {
-    WARN "tray\ folder not found — skipping VendorHub.exe build."
+    WARN "tray\ folder not found - skipping VendorHub.exe build."
 }
 
 # STEP 6 - Create shortcuts
@@ -261,7 +261,7 @@ echo Done. VendorHub stopped.
 timeout /t 2 >nul
 "@
 
-# Desktop shortcuts — prefer VendorHub.exe
+# Desktop shortcuts - prefer VendorHub.exe
 try {
     $desktop = [System.Environment]::GetFolderPath("CommonDesktopDirectory")
     $WshShell = New-Object -ComObject WScript.Shell
@@ -338,7 +338,7 @@ if (Test-Path $exeDest) {
     Write-Host "   * Double-click 'VendorHub' on your Desktop" -ForegroundColor White
     Write-Host "   * The VendorHub icon will appear in the system tray (bottom-right clock area)" -ForegroundColor White
     Write-Host "   * Right-click the tray icon to Open, Restart, Stop, or Check for Updates" -ForegroundColor White
-    Write-Host "   * VendorHub starts automatically with Windows — no CMD window needed!" -ForegroundColor White
+    Write-Host "   * VendorHub starts automatically with Windows - no CMD window needed!" -ForegroundColor White
 } else {
     Write-Host "  HOW TO USE EVERY DAY:" -ForegroundColor Yellow
     Write-Host "   1. Double-click 'VendorHub' on your Desktop" -ForegroundColor White
