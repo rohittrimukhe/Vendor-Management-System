@@ -183,7 +183,7 @@ router.get('/check', async (req, res) => {
 
     // Check latest commit on default branch via API
     const branchR = await httpsJSON(`https://api.github.com/repos/${GITHUB_REPO}/commits/HEAD`).catch(() => null);
-    const latestCommit = branchR?.body?.sha ? {
+    const latestCommit = (typeof branchR?.body === 'object' && branchR?.body?.sha) ? {
       sha: branchR.body.sha.slice(0, 7),
       message: branchR.body.commit?.message?.split('\n')[0],
       author: branchR.body.commit?.author?.name,
@@ -192,7 +192,8 @@ router.get('/check', async (req, res) => {
 
     // Get recent commits list
     const commitsR = await httpsJSON(`https://api.github.com/repos/${GITHUB_REPO}/commits?per_page=10`).catch(() => null);
-    const recentCommits = (commitsR?.body || []).slice(0, 10).map(c => ({
+    const commitsBody = Array.isArray(commitsR?.body) ? commitsR.body : [];
+    const recentCommits = commitsBody.slice(0, 10).map(c => ({
       sha: c.sha?.slice(0, 7),
       message: c.commit?.message?.split('\n')[0],
       date: c.commit?.author?.date,
