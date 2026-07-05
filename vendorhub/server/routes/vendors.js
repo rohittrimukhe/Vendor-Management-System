@@ -53,7 +53,7 @@ function computeRisk(vendorId) {
 
 router.get('/', requirePermission('Vendors', 'Read'), (req, res) => {
   try {
-    const { q, status, tier, type, domain } = req.query;
+    const { q, status, tier, type, domain, expiring } = req.query;
     const userId = req.session.userId;
     const isAdmin = (() => { const u = db.prepare('SELECT group_id FROM users WHERE id=?').get(userId); return u?.group_id === 1; })();
     let sql = 'SELECT v.* FROM vendors v';
@@ -72,6 +72,9 @@ router.get('/', requirePermission('Vendors', 'Read'), (req, res) => {
     if (status) { conditions.push('v.empanelment_status = ?'); params.push(status); }
     if (tier) { conditions.push('v.tier = ?'); params.push(tier); }
     if (type) { conditions.push('v.vendor_type = ?'); params.push(type); }
+    if (expiring === 'true') {
+      conditions.push(`EXISTS (SELECT 1 FROM contracts c WHERE c.vendor_id = v.id AND c.end_date IS NOT NULL AND c.end_date != '' AND date(c.end_date) BETWEEN date('now') AND date('now','+90 days'))`);
+    }
     // Visibility filter: non-admins can only see vendors they have access to
     if (!isAdmin) {
       conditions.push(`(v.visibility = 'everyone' OR v.visibility IS NULL OR EXISTS (SELECT 1 FROM vendor_visibility_users vvu WHERE vvu.vendor_id = v.id AND vvu.user_id = ?))`);

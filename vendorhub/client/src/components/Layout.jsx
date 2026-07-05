@@ -23,6 +23,20 @@ export default function Layout({ children, title }) {
         <main ref={mainRef} className="page-enter" style={{ flex: 1, padding: 28 }}>
           {children}
         </main>
+        <footer style={{
+          borderTop: dark ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(232,236,240,0.8)',
+          background: dark ? 'rgba(13,17,23,0.8)' : 'rgba(255,255,255,0.7)',
+          backdropFilter: 'blur(8px)',
+          padding: '12px 28px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8,
+        }}>
+          <span style={{ fontSize: 12, color: dark ? 'rgba(255,255,255,0.3)' : '#aaa', fontWeight: 500 }}>
+            © 2026 LRS Services (West) Mumbai · All Rights Reserved
+          </span>
+          <span style={{ fontSize: 12, color: dark ? 'rgba(255,255,255,0.2)' : '#ccc' }}>
+            VendorHub · Powered by LRS Services Pvt Ltd
+          </span>
+        </footer>
       </div>
     </div>
   );
