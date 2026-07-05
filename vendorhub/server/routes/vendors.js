@@ -153,9 +153,10 @@ router.get('/export', requirePermission('Vendors', 'Read'), (req, res) => {
 });
 
 // CSV Template download — must be before /:id routes
-const TEMPLATE_VERSION = '2025-07-05';
+const TEMPLATE_VERSION = '2025-07-05-v2';
 router.get('/import/template', requirePermission('Vendors', 'Read'), (req, res) => {
-  const header = ['name','gstin','website','address','geo_scope','empanelment_status','tier','vendor_type','summary','domains','tags','added_date'];
+  // added_by and added_date are intentionally excluded — set by the system from session + server clock
+  const header = ['name','gstin','website','address','geo_scope','empanelment_status','tier','vendor_type','summary','domains','tags'];
   const sample = [
     'Acme Technologies Pvt Ltd',
     '27AABCU9603R1ZX',
@@ -168,7 +169,6 @@ router.get('/import/template', requirePermission('Vendors', 'Read'), (req, res) 
     'End-to-end IT solutions and managed services',
     'ERP|Cloud|Security',
     'preferred|shortlisted',
-    new Date().toISOString().split('T')[0],
   ];
   const csv = [
     `# VendorHub Import Template v${TEMPLATE_VERSION}`,
@@ -178,7 +178,7 @@ router.get('/import/template', requirePermission('Vendors', 'Read'), (req, res) 
     '# tier: Tier 1 | Tier 2 | Tier 3 (default: Tier 2)',
     '# vendor_type: IT Services | IT Products | Consulting | Infrastructure | Cloud Services | Managed Services | Other',
     '# domains/tags: separate multiple values with pipe (|)  e.g. ERP|Cloud|Security',
-    '# added_date: YYYY-MM-DD format (default: today)',
+    '# NOTE: added_by and added_date are set automatically by the system and cannot be supplied via import',
     header.join(','),
     sample.map(v => `"${v}"`).join(','),
   ].join('\n');
@@ -253,12 +253,9 @@ router.post('/import', requirePermission('Vendors', 'Edit'), csvUpload.single('f
         let vtype = row.vendor_type;
         if (vtype && !VALID_TYPE.has(vtype)) { warnings.push(`vendor_type '${vtype}' not recognised — will be stored as-is`); }
 
-        // Validate added_date format
-        let addedDate = row.added_date;
-        if (addedDate && !/^\d{4}-\d{2}-\d{2}$/.test(addedDate)) {
-          warnings.push(`added_date '${addedDate}' is not YYYY-MM-DD format — defaulting to today`);
-          addedDate = '';
-        }
+        // Silently ignore any added_date / added_by columns in the CSV — always use system values
+        // This is an intentional security and audit control: timestamps and authorship must come
+        // from the server clock and authenticated session, never from user-supplied data.
 
         try {
           const color = COLORS[Math.floor(Math.random() * COLORS.length)];
@@ -266,7 +263,7 @@ router.post('/import', requirePermission('Vendors', 'Edit'), csvUpload.single('f
             row.name, row.gstin || null, row.website || null, row.address || null,
             row.geo_scope || null, status || 'In Evaluation',
             tier || 'Tier 2', vtype || null, row.summary || null,
-            row.name[0].toUpperCase(), color, user?.username || 'import', addedDate || today
+            row.name[0].toUpperCase(), color, user?.username || 'import', today
           );
           const vendorId = result.lastInsertRowid;
           if (row.domains) {

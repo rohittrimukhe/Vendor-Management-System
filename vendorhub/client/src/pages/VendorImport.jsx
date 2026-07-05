@@ -4,7 +4,7 @@ import Layout from '../components/Layout.jsx';
 
 const NAVY = '#1C3C6E';
 const BLUE = '#29ABE2';
-const TEMPLATE_VERSION = '2025-07-05';
+const TEMPLATE_VERSION = '2025-07-05-v2';
 
 const COLUMNS = [
   { name: 'name',               required: true,  type: 'Text',     description: 'Vendor company name', example: 'Acme Technologies Pvt Ltd' },
@@ -18,7 +18,11 @@ const COLUMNS = [
   { name: 'summary',            required: false, type: 'Text',     description: 'Short description / overview', example: 'End-to-end IT solutions and managed services' },
   { name: 'domains',            required: false, type: 'List (|)', description: 'Service domains, separated by pipe |', example: 'ERP|Cloud|Security' },
   { name: 'tags',               required: false, type: 'List (|)', description: 'Custom tags, separated by pipe |', example: 'preferred|shortlisted' },
-  { name: 'added_date',         required: false, type: 'Date',     description: 'Date added (YYYY-MM-DD, default: today)', example: '2025-01-15' },
+];
+
+const SYSTEM_FIELDS = [
+  { name: 'added_by',   value: 'Logged-in user (from session)',  reason: 'Authorship must reflect the authenticated user performing the import — cannot be delegated or forged via file upload.' },
+  { name: 'added_date', value: 'Server date at time of import',  reason: 'Timestamps must come from the server clock, not user input. Allowing client-supplied dates would allow backdating, breaking audit integrity.' },
 ];
 
 export default function VendorImport() {
@@ -146,7 +150,36 @@ export default function VendorImport() {
         </div>
 
         <div style={{ marginTop: 14, padding: '10px 14px', background: '#FFFBF0', border: '1px solid #FCECC1', borderRadius: 8, fontSize: 12, color: '#856404' }}>
-          <strong>Notes:</strong> Duplicate vendor names are rejected. Invalid enum values default to the system default and a warning is added to the import log. Tags and domains with spaces around the | separator are trimmed automatically.
+          <strong>Notes:</strong> Duplicate vendor names are rejected. Invalid enum values fall back to the system default and a warning is logged. Pipe-separated values are trimmed automatically.
+        </div>
+
+        {/* System-controlled fields */}
+        <div style={{ marginTop: 16, background: '#F5F6FA', borderRadius: 10, padding: '14px 16px', border: '1px solid #E2E6EA' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 16 }}>🔒</span>
+            <span style={{ fontWeight: 700, fontSize: 13, color: NAVY }}>System-Controlled Fields (not in template)</span>
+          </div>
+          <p style={{ fontSize: 12, color: '#666', margin: '0 0 10px' }}>
+            The following fields are set automatically by the server and <strong>cannot be supplied via CSV</strong>. Even if present in the file, they are ignored. This is an intentional security and audit control.
+          </p>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: '#E8ECF0' }}>
+                {['Field', 'Set To', 'Why it cannot be user-supplied'].map(h => (
+                  <th key={h} style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 700, color: '#555' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {SYSTEM_FIELDS.map((f, i) => (
+                <tr key={f.name} style={{ background: i % 2 === 0 ? '#fff' : '#F9FAFB', borderBottom: '1px solid #E8ECF0' }}>
+                  <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 700, color: '#555' }}>{f.name}</td>
+                  <td style={{ padding: '8px 10px', color: '#27AE60', fontWeight: 600 }}>{f.value}</td>
+                  <td style={{ padding: '8px 10px', color: '#666' }}>{f.reason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 
