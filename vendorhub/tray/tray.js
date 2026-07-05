@@ -17,10 +17,13 @@ const { execSync } = require('child_process');
 const os      = require('os');
 
 // ── Paths ────────────────────────────────────────────────────────────────────
-// When compiled with pkg, __dirname is the snapshot root.
-// The real exe lives next to the vendorhub/ folder structure.
-const EXE_DIR   = path.dirname(process.execPath);          // folder containing VendorHub.exe
-const APP_DIR   = path.join(EXE_DIR, 'vendorhub');         // vendorhub/ sibling
+// Support two layouts:
+//   A) VendorHub.exe sits NEXT TO vendorhub/  → APP_DIR = EXE_DIR/vendorhub
+//   B) VendorHub.exe sits INSIDE  vendorhub/  → APP_DIR = EXE_DIR
+const EXE_DIR   = path.dirname(process.execPath);
+const APP_DIR   = fs.existsSync(path.join(EXE_DIR, 'server', 'index.js'))
+                    ? EXE_DIR
+                    : path.join(EXE_DIR, 'vendorhub');
 const SERVER_JS = path.join(APP_DIR, 'server', 'index.js');
 const DATA_DIR  = path.join(APP_DIR, 'data');
 const LOG_FILE  = path.join(DATA_DIR, 'tray.log');
