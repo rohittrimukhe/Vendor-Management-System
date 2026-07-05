@@ -340,6 +340,25 @@ router.post('/apply', async (req, res) => {
     await run(`${NPM} run build`, clientDir);
     log('Web interface rebuilt', 'success');
 
+    // 7. Rebuild VendorHub.exe tray app if tray/ folder exists
+    const trayDir = path.join(APP_DIR, 'tray');
+    if (fs.existsSync(path.join(trayDir, 'package.json'))) {
+      try {
+        log('Installing tray dependencies...');
+        await run(`${NPM} install --no-audit --no-fund`, trayDir);
+        log('Building VendorHub.exe...');
+        await run(`${NPM} run build`, trayDir);
+        const builtExe = path.join(APP_DIR, '..', 'dist', 'VendorHub.exe');
+        const destExe  = path.join(APP_DIR, '..', 'VendorHub.exe');
+        if (fs.existsSync(builtExe)) {
+          fs.copyFileSync(builtExe, destExe);
+          log('VendorHub.exe updated successfully', 'success');
+        }
+      } catch (trayErr) {
+        log('VendorHub.exe build skipped (non-fatal): ' + trayErr.message, 'warn');
+      }
+    }
+
     // Save the installed SHA so next check knows we're up to date
     const headR = await httpsJSON(`https://api.github.com/repos/${GITHUB_REPO}/commits/HEAD`).catch(() => null);
     if (headR?.body?.sha) {
