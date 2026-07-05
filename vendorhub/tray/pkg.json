@@ -1,7 +1,6 @@
 {
   "assets": [
-    "node_modules/systray2/tray/**/*",
-    "node_modules/systray2/build/**/*"
+    "node_modules/systray2/traybin/**/*"
   ],
   "scripts": [],
   "outputPath": "../dist"

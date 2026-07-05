@@ -5,11 +5,11 @@
   "main": "tray.js",
   "scripts": {
     "start": "node tray.js",
-    "build": "pkg tray.js --targets node18-win-x64 --output ../dist/VendorHub.exe --config pkg.json",
-    "build-debug": "pkg tray.js --targets node18-win-x64 --output ../dist/VendorHub-debug.exe --config pkg.json --debug"
+    "build": "npx pkg tray.js --targets node18-win-x64 --output ../dist/VendorHub.exe --config pkg.json",
+    "build-debug": "npx pkg tray.js --targets node18-win-x64 --output ../dist/VendorHub-debug.exe --config pkg.json --debug"
   },
   "dependencies": {
-    "systray2": "^0.0.14"
+    "systray2": "^2.1.4"
   },
   "devDependencies": {
     "pkg": "^5.8.1"
