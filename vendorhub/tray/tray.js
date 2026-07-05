@@ -462,10 +462,8 @@ function initTray() {
     }
   });
 
-  trayInstance.onError(err => {
-    log('Tray error: ' + err);
-  });
-
+  // onError not called here — systray2 v2.x initialises _process async so
+  // calling it immediately would throw. uncaughtException handler covers it.
   log('Tray initialized');
 }
 
