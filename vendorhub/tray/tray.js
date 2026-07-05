@@ -401,11 +401,40 @@ const IDX = {
   EXIT:        13,
 };
 
+// ── Extract tray binary from pkg snapshot ─────────────────────────────────────
+// pkg intercepts synchronous fs calls but NOT async streams (fs-extra fs.copy).
+// systray2 v2.x uses fs.copy internally which fails inside a pkg exe.
+// We extract the binary ourselves using readFileSync/writeFileSync, then use copyDir:false.
+function prepareTrayBinary() {
+  try {
+    const binName = 'tray_windows_release.exe';
+    const snapshotSrc = path.join(__dirname, 'node_modules', 'systray2', 'traybin', binName);
+    const destDir = path.join(EXE_DIR, 'traybin');
+    const destBin = path.join(destDir, binName);
+
+    if (!fs.existsSync(destBin)) {
+      fs.mkdirSync(destDir, { recursive: true });
+      const data = fs.readFileSync(snapshotSrc);
+      fs.writeFileSync(destBin, data, { mode: 0o755 });
+      log('Extracted tray binary to ' + destBin);
+    }
+
+    // systray2 CWD-relative lookup: path.join('.', 'traybin', binName)
+    process.chdir(EXE_DIR);
+    return true;
+  } catch (e) {
+    log('prepareTrayBinary error: ' + e.message);
+    return false;
+  }
+}
+
 // ── Init tray ─────────────────────────────────────────────────────────────────
 function initTray() {
   let SysTray;
   try { SysTray = require('systray2').default; }
   catch { SysTray = require('systray2'); }
+
+  prepareTrayBinary();
 
   trayInstance = new SysTray({
     menu: {
@@ -415,7 +444,7 @@ function initTray() {
       items:   buildMenu(),
     },
     debug:   false,
-    copyDir: true,
+    copyDir: false,
   });
 
   trayInstance.onClick(action => {
