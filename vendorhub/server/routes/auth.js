@@ -1,9 +1,19 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
+const rateLimit = require('express-rate-limit');
 const { db } = require('../db');
 const router = express.Router();
 
-router.post('/login', async (req, res) => {
+// H-3: Brute-force protection — 10 attempts per 15 minutes per IP
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts. Please try again later.' },
+});
+
+router.post('/login', loginLimiter, async (req, res) => {
   try {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
@@ -62,7 +72,7 @@ router.put('/profile', async (req, res) => {
       if (!currentPassword) return res.status(400).json({ error: 'Current password required to set a new password' });
       const match = await bcrypt.compare(currentPassword, user.password_hash);
       if (!match) return res.status(400).json({ error: 'Current password is incorrect' });
-      if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
+      if (newPassword.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters' });
       updates.password_hash = await bcrypt.hash(newPassword, 10);
     }
 
@@ -75,7 +85,8 @@ router.put('/profile', async (req, res) => {
     res.json({ data: updated });
   } catch (e) {
     if (e.message?.includes('UNIQUE')) return res.status(400).json({ error: 'That email is already used by another account' });
-    res.status(500).json({ error: e.message });
+    console.error('[auth/profile]', e);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

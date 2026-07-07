@@ -35,6 +35,10 @@ router.post('/check', (req, res) => {
 
 router.post('/init', async (req, res) => {
   try {
+    // C-2: Prevent re-initialization once system is already set up
+    const already = db.prepare("SELECT value FROM settings WHERE key='initialized'").get();
+    if (already) return res.status(403).json({ error: 'System already initialized' });
+
     const { org_name, timezone, currency, primary_domain, admin_name, admin_email, admin_username, admin_password } = req.body;
 
     if (!admin_username || !admin_password) return res.status(400).json({ error: 'Admin credentials required' });
@@ -84,8 +88,8 @@ router.post('/init', async (req, res) => {
 
     res.json({ data: { success: true } });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    console.error('[setup/init]', err);
+    res.status(500).json({ error: 'Initialization failed' });
   }
 });
 

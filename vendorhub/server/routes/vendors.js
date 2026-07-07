@@ -101,15 +101,32 @@ router.get('/', requirePermission('Vendors', 'Read'), (req, res) => {
   }
 });
 
-// Bulk Actions
+// Bulk Actions — C-5: delete requires Full; C-6: audit log bulk operations
 router.post('/bulk', requirePermission('Vendors', 'Edit'), (req, res) => {
   const { ids, action, value } = req.body;
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array required' });
 
   if (action === 'delete') {
+    // C-5: Delete requires Full permission
+    const userId = req.session.userId;
+    const user = db.prepare('SELECT group_id FROM users WHERE id=?').get(userId);
+    const isAdmin = user?.group_id === 1;
+    if (!isAdmin) {
+      const perm = db.prepare("SELECT access_level FROM permissions WHERE group_id=? AND module='Vendors'").get(user?.group_id);
+      const levels = ['None', 'Read', 'Edit', 'Full'];
+      if (!perm || levels.indexOf(perm.access_level) < levels.indexOf('Full')) {
+        return res.status(403).json({ error: 'Full permission required for bulk delete' });
+      }
+    }
     if (ids.length > 50) return res.status(400).json({ error: 'Max 50 vendors per bulk delete' });
     const deleteVendor = db.prepare('DELETE FROM vendors WHERE id = ?');
     db.transaction(() => { ids.forEach(id => deleteVendor.run(id)); })();
+    // C-6: Audit bulk delete
+    try {
+      const uname = db.prepare('SELECT username FROM users WHERE id=?').get(req.session.userId);
+      db.prepare('INSERT INTO audit_log (user_id, username, action, entity_type, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(req.session.userId, uname?.username || 'unknown', 'BULK_DELETE', 'Vendor', `IDs: ${ids.join(', ')}`, req.ip || null);
+    } catch {}
     return res.json({ data: { affected: ids.length } });
   }
 
@@ -118,6 +135,11 @@ router.post('/bulk', requirePermission('Vendors', 'Edit'), (req, res) => {
     if (!allowed.includes(value)) return res.status(400).json({ error: 'Invalid status' });
     const upd = db.prepare("UPDATE vendors SET empanelment_status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
     db.transaction(() => { ids.forEach(id => upd.run(value, id)); })();
+    try {
+      const uname = db.prepare('SELECT username FROM users WHERE id=?').get(req.session.userId);
+      db.prepare('INSERT INTO audit_log (user_id, username, action, entity_type, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(req.session.userId, uname?.username || 'unknown', 'BULK_STATUS_CHANGE', 'Vendor', `Status → ${value}, IDs: ${ids.join(', ')}`, req.ip || null);
+    } catch {}
     return res.json({ data: { affected: ids.length } });
   }
 
@@ -126,6 +148,11 @@ router.post('/bulk', requirePermission('Vendors', 'Edit'), (req, res) => {
     if (!allowed.includes(value)) return res.status(400).json({ error: 'Invalid tier' });
     const upd = db.prepare("UPDATE vendors SET tier=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
     db.transaction(() => { ids.forEach(id => upd.run(value, id)); })();
+    try {
+      const uname = db.prepare('SELECT username FROM users WHERE id=?').get(req.session.userId);
+      db.prepare('INSERT INTO audit_log (user_id, username, action, entity_type, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(req.session.userId, uname?.username || 'unknown', 'BULK_TIER_CHANGE', 'Vendor', `Tier → ${value}, IDs: ${ids.join(', ')}`, req.ip || null);
+    } catch {}
     return res.json({ data: { affected: ids.length } });
   }
 
@@ -134,7 +161,12 @@ router.post('/bulk', requirePermission('Vendors', 'Edit'), (req, res) => {
 
 // CSV Export — must be before /:id routes
 router.get('/export', requirePermission('Vendors', 'Read'), (req, res) => {
-  const vendors = db.prepare('SELECT * FROM vendors ORDER BY name').all();
+  // M-9: Apply visibility filter — non-admins only export vendors they can see
+  const userId = req.session.userId;
+  const isAdmin = (() => { const u = db.prepare('SELECT group_id FROM users WHERE id=?').get(userId); return u?.group_id === 1; })();
+  const vendors = isAdmin
+    ? db.prepare('SELECT * FROM vendors ORDER BY name').all()
+    : db.prepare(`SELECT v.* FROM vendors v WHERE v.visibility = 'everyone' OR v.visibility IS NULL OR EXISTS (SELECT 1 FROM vendor_visibility_users vvu WHERE vvu.vendor_id = v.id AND vvu.user_id = ?) ORDER BY v.name`).all(userId);
   const header = ['id','name','gstin','website','address','geo_scope','empanelment_status','tier','vendor_type','summary','added_by','added_date'];
   const rows = [header.join(',')];
   for (const v of vendors) {
@@ -198,6 +230,9 @@ router.post('/import', requirePermission('Vendors', 'Edit'), csvUpload.single('f
     // Strip comment lines (# prefix) before splitting
     const lines = text.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
     if (lines.length < 2) return res.status(400).json({ error: 'CSV must have a header row + at least one data row' });
+    // C-7: Limit rows per import to prevent abuse / runaway transactions
+    const MAX_ROWS = 500;
+    if (lines.length - 1 > MAX_ROWS) return res.status(400).json({ error: `Import limit is ${MAX_ROWS} rows per file` });
 
     const VALID_STATUS = new Set(['Empanelled', 'In Evaluation', 'On Hold', 'Archived']);
     const VALID_TIER = new Set(['Tier 1', 'Tier 2', 'Tier 3']);
@@ -290,7 +325,8 @@ router.post('/import', requirePermission('Vendors', 'Edit'), csvUpload.single('f
     const warned = logs.filter(l => l.status === 'imported_with_warnings').length;
     res.json({ data: { imported, failed, warned, total: lines.length - 1, logs } });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[vendors/import]', err);
+    res.status(500).json({ error: 'Import failed' });
   }
 });
 
@@ -298,8 +334,16 @@ router.post('/import', requirePermission('Vendors', 'Edit'), csvUpload.single('f
 router.get('/compare', requirePermission('Vendors', 'Read'), (req, res) => {
   const ids = (req.query.ids || '').split(',').map(Number).filter(Boolean).slice(0, 4);
   if (ids.length < 2) return res.status(400).json({ error: 'At least 2 vendor IDs required' });
+  const userId = req.session.userId;
+  const isAdmin = (() => { const u = db.prepare('SELECT group_id FROM users WHERE id=?').get(userId); return u?.group_id === 1; })();
   const result = ids.map(id => {
-    const v = db.prepare('SELECT * FROM vendors WHERE id = ?').get(id);
+    // M-13: Apply same visibility filter as the list endpoint
+    let v;
+    if (isAdmin) {
+      v = db.prepare('SELECT * FROM vendors WHERE id = ?').get(id);
+    } else {
+      v = db.prepare(`SELECT * FROM vendors WHERE id = ? AND (visibility = 'everyone' OR visibility IS NULL OR EXISTS (SELECT 1 FROM vendor_visibility_users vvu WHERE vvu.vendor_id = ? AND vvu.user_id = ?))`).get(id, id, userId);
+    }
     if (!v) return null;
     v.domains = db.prepare('SELECT domain FROM vendor_domains WHERE vendor_id = ?').all(id).map(r => r.domain);
     v.tags = db.prepare('SELECT tag FROM vendor_tags WHERE vendor_id = ?').all(id).map(r => r.tag);
@@ -409,7 +453,7 @@ router.get('/:id', requirePermission('Vendors', 'Read'), (req, res) => {
   }
 });
 
-router.put('/:id', requirePermission('Vendors', 'Edit'), (req, res) => {
+router.put('/:id', requirePermission('Vendors', 'Edit'), auditLog('Vendor', 'UPDATE', (req) => req.params.id), (req, res) => {
   try {
     const { name, gstin, website, address, geo_scope, empanelment_status, tier, vendor_type, summary, domains, tags } = req.body;
     const vendor = db.prepare('SELECT * FROM vendors WHERE id = ?').get(req.params.id);
@@ -459,19 +503,19 @@ router.delete('/:id', requirePermission('Vendors', 'Full'), auditLog('Vendor', '
   }
 });
 
-// Certifications
-router.get('/:id/certifications', (req, res) => {
+// Certifications — M-1: Add permission checks
+router.get('/:id/certifications', requirePermission('Vendors', 'Read'), (req, res) => {
   const rows = db.prepare('SELECT * FROM certifications WHERE vendor_id = ?').all(req.params.id);
   res.json({ data: rows });
 });
 
-router.post('/:id/certifications', (req, res) => {
+router.post('/:id/certifications', requirePermission('Vendors', 'Edit'), (req, res) => {
   const { name, issuer, expiry, is_valid } = req.body;
   const result = db.prepare('INSERT INTO certifications (vendor_id, name, issuer, expiry, is_valid) VALUES (?, ?, ?, ?, ?)').run(req.params.id, name, issuer, expiry, is_valid !== false ? 1 : 0);
   res.status(201).json({ data: db.prepare('SELECT * FROM certifications WHERE id = ?').get(result.lastInsertRowid) });
 });
 
-router.delete('/:id/certifications/:certId', (req, res) => {
+router.delete('/:id/certifications/:certId', requirePermission('Vendors', 'Full'), (req, res) => {
   db.prepare('DELETE FROM certifications WHERE id = ? AND vendor_id = ?').run(req.params.certId, req.params.id);
   res.json({ data: { success: true } });
 });
@@ -534,11 +578,20 @@ router.post('/:id/approval/submit', requirePermission('Vendors', 'Edit'), (req, 
   res.json({ data: { success: true } });
 });
 
-// Approve / Reject (reviewer / admin)
+// Approve / Reject (reviewer / admin) — H-10: Only the assigned reviewer or admin may act
 router.post('/:id/approval/review', requirePermission('Vendors', 'Edit'), (req, res) => {
   const { action, note } = req.body;
   if (!['approve', 'reject'].includes(action)) return res.status(400).json({ error: 'action must be approve or reject' });
-  const user = db.prepare('SELECT id, username FROM users WHERE id = ?').get(req.session.userId);
+  const user = db.prepare('SELECT id, username, group_id FROM users WHERE id = ?').get(req.session.userId);
+  const isAdmin = user?.group_id === 1;
+  // H-10: Non-admins must be the assigned reviewer
+  if (!isAdmin) {
+    const vendor = db.prepare('SELECT approval_reviewer_id FROM vendors WHERE id=?').get(req.params.id);
+    if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
+    if (vendor.approval_reviewer_id !== user.id) {
+      return res.status(403).json({ error: 'You are not the assigned reviewer for this vendor' });
+    }
+  }
   const status = action === 'approve' ? 'approved' : 'rejected';
   db.prepare('UPDATE vendors SET approval_status=? WHERE id=?').run(status, req.params.id);
   if (note) {

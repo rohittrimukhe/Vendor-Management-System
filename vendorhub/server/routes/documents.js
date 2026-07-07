@@ -21,9 +21,33 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
+// M-4: Restrict uploaded file types to documents/images only
+const ALLOWED_MIME_TYPES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain',
+  'text/csv',
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+]);
 
-router.get('/', (req, res) => {
+const upload = multer({
+  storage,
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (ALLOWED_MIME_TYPES.has(file.mimetype)) cb(null, true);
+    else cb(new Error('File type not allowed. Upload PDF, Office documents, plain text, CSV, or images.'));
+  },
+});
+
+router.get('/', requirePermission('Vendors', 'Read'), (req, res) => {
   const { category } = req.query;
   let sql = 'SELECT * FROM documents WHERE vendor_id = ?';
   const params = [req.params.vendorId];
@@ -65,7 +89,7 @@ router.put('/:docId', requirePermission('Vendors', 'Edit'), (req, res) => {
   res.json({ data: db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.docId) });
 });
 
-router.get('/:docId/download', (req, res) => {
+router.get('/:docId/download', requirePermission('Vendors', 'Read'), (req, res) => {
   const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND vendor_id = ?').get(req.params.docId, req.params.vendorId);
   if (!doc) return res.status(404).json({ error: 'Document not found' });
   if (!fs.existsSync(doc.file_path)) return res.status(404).json({ error: 'File not found on disk' });

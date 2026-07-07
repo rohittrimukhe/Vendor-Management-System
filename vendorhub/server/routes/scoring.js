@@ -1,7 +1,7 @@
 const express = require('express');
 const { db } = require('../db');
 const requireAuth = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/permissions');
+const { requireAdmin, requirePermission } = require('../middleware/permissions');
 const router = express.Router();
 
 router.use(requireAuth);
@@ -59,7 +59,7 @@ router.get('/vendors/:vendorId', (req, res) => {
   res.json({ data: result, compositeScore, totalWeight });
 });
 
-router.post('/vendors/:vendorId', (req, res) => {
+router.post('/vendors/:vendorId', requirePermission('Vendors', 'Edit'), (req, res) => {
   const user = db.prepare('SELECT username FROM users WHERE id = ?').get(req.session.userId);
   const { scores } = req.body; // [{ criteria_id, score, notes }]
   if (!Array.isArray(scores)) return res.status(400).json({ error: 'scores array required' });
