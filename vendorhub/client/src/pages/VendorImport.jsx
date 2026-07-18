@@ -4,20 +4,15 @@ import Layout from '../components/Layout.jsx';
 
 const NAVY = '#1C3C6E';
 const BLUE = '#29ABE2';
-const TEMPLATE_VERSION = '2025-07-05-v2';
+const TEMPLATE_VERSION = '2025-07-18-v3';
 
 const COLUMNS = [
-  { name: 'name',               required: true,  type: 'Text',     description: 'Vendor company name', example: 'Acme Technologies Pvt Ltd' },
-  { name: 'gstin',              required: false, type: 'Text',     description: 'GST Identification Number (15 chars)', example: '27AABCU9603R1ZX' },
-  { name: 'website',            required: false, type: 'URL',      description: 'Full website URL', example: 'https://acme.com' },
-  { name: 'address',            required: false, type: 'Text',     description: 'Office address', example: '101 Tech Park, Mumbai' },
-  { name: 'geo_scope',          required: false, type: 'Text',     description: 'Geographic coverage', example: 'National / Mumbai / Pan India' },
-  { name: 'empanelment_status', required: false, type: 'Enum',     description: 'Empanelment status (default: In Evaluation)', example: 'Empanelled | In Evaluation | On Hold | Archived' },
-  { name: 'tier',               required: false, type: 'Enum',     description: 'Vendor tier (default: Tier 2)', example: 'Tier 1 | Tier 2 | Tier 3' },
-  { name: 'vendor_type',        required: false, type: 'Enum',     description: 'Type of vendor', example: 'IT Services | IT Products | Consulting | Infrastructure | Cloud Services | Managed Services | Other' },
-  { name: 'summary',            required: false, type: 'Text',     description: 'Short description / overview', example: 'End-to-end IT solutions and managed services' },
-  { name: 'domains',            required: false, type: 'List (|)', description: 'Service domains, separated by pipe |', example: 'ERP|Cloud|Security' },
-  { name: 'tags',               required: false, type: 'List (|)', description: 'Custom tags, separated by pipe |', example: 'preferred|shortlisted' },
+  { name: 'Sr.No',   required: false, type: 'Number', description: 'Row number — informational only, ignored during import', example: '1, 2, 3 …' },
+  { name: 'Name',    required: true,  type: 'Text',   description: 'Vendor / company name', example: 'iThinker LLP' },
+  { name: 'Email',   required: false, type: 'Email',  description: 'Primary contact email address', example: 'contact@vendor.com' },
+  { name: 'Mobile',  required: false, type: 'Text',   description: 'Primary contact mobile / phone number', example: '9876543210' },
+  { name: 'Address', required: false, type: 'Text',   description: 'Office / registered address (can be multi-line in Excel)', example: '311, The Summit, Andheri (East), Mumbai 400093' },
+  { name: 'Details', required: false, type: 'Text',   description: 'Description of the vendor, services, products, etc.', example: 'Authorized distributor for Synology NAS …' },
 ];
 
 const SYSTEM_FIELDS = [
@@ -36,7 +31,7 @@ export default function VendorImport() {
 
   const handleFile = (f) => {
     if (!f) return;
-    if (!f.name.toLowerCase().endsWith('.csv')) { alert('Please select a .csv file'); return; }
+    if (!f.name.toLowerCase().endsWith('.xlsx')) { alert('Please select an Excel (.xlsx) file'); return; }
     setFile(f);
     setResult(null);
   };
@@ -82,8 +77,8 @@ export default function VendorImport() {
       {/* Page header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <h1 style={{ fontFamily: 'Montserrat', color: NAVY, fontSize: 22, fontWeight: 700, margin: 0 }}>Import Vendors from CSV</h1>
-          <p style={{ color: '#888', fontSize: 13, margin: '4px 0 0' }}>Bulk-add vendors using a comma-separated file. Download the template below to get started.</p>
+          <h1 style={{ fontFamily: 'Montserrat', color: NAVY, fontSize: 22, fontWeight: 700, margin: 0 }}>Import Vendors from Excel</h1>
+          <p style={{ color: '#888', fontSize: 13, margin: '4px 0 0' }}>Bulk-add vendors using the LRS Excel template. Download the template, fill it in, then upload it here.</p>
         </div>
         <button onClick={() => navigate('/vendors')} style={{ padding: '9px 18px', border: '1px solid #DDE2E8', borderRadius: 7, background: '#fff', color: '#555', cursor: 'pointer', fontSize: 13 }}>← Back to Vendors</button>
       </div>
@@ -101,7 +96,7 @@ export default function VendorImport() {
             download
             style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 22px', background: NAVY, color: '#fff', borderRadius: 8, fontWeight: 600, fontSize: 14, textDecoration: 'none' }}
           >
-            ⬇ Download Template CSV
+            ⬇ Download Template Excel (.xlsx)
           </a>
           <div style={{ background: '#F0F8FF', border: '1px solid #C8E0F4', borderRadius: 8, padding: '8px 14px', fontSize: 12, color: '#1C3C6E' }}>
             <span style={{ fontWeight: 700 }}>Template version:</span> {TEMPLATE_VERSION} &nbsp;|&nbsp;
@@ -110,7 +105,7 @@ export default function VendorImport() {
         </div>
 
         <p style={{ fontSize: 12, color: '#888', marginTop: 12, marginBottom: 0 }}>
-          The template includes a sample row and inline comments explaining each column. Comment lines (starting with #) are automatically skipped during import.
+          The template has 6 columns matching the LRS Vendor Details format: <strong>Sr.No, Name, Email, Mobile, Address, Details</strong>. It includes one sample row — delete it and fill in your own data before uploading.
         </p>
       </div>
 
@@ -150,7 +145,7 @@ export default function VendorImport() {
         </div>
 
         <div style={{ marginTop: 14, padding: '10px 14px', background: '#FFFBF0', border: '1px solid #FCECC1', borderRadius: 8, fontSize: 12, color: '#856404' }}>
-          <strong>Notes:</strong> Duplicate vendor names are rejected. Invalid enum values fall back to the system default and a warning is logged. Pipe-separated values are trimmed automatically.
+          <strong>Notes:</strong> Only the <strong>Name</strong> column is required. Duplicate vendor names are rejected. Multi-line text in Address / Details cells is fully supported. Sr.No is ignored — row numbers are assigned automatically.
         </div>
 
         {/* System-controlled fields */}
@@ -187,7 +182,7 @@ export default function VendorImport() {
       <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', padding: 24, marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
           <div style={{ width: 28, height: 28, borderRadius: '50%', background: NAVY, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>3</div>
-          <h2 style={{ fontFamily: 'Montserrat', fontSize: 15, fontWeight: 700, color: NAVY, margin: 0 }}>Upload Your CSV File</h2>
+          <h2 style={{ fontFamily: 'Montserrat', fontSize: 15, fontWeight: 700, color: NAVY, margin: 0 }}>Upload Your Excel File</h2>
         </div>
 
         {/* Drop zone */}
@@ -215,13 +210,13 @@ export default function VendorImport() {
             </>
           ) : (
             <>
-              <div style={{ fontWeight: 600, color: NAVY, fontSize: 15 }}>Drag & drop your CSV here</div>
-              <div style={{ color: '#888', fontSize: 12, marginTop: 4 }}>or click to browse — max 5 MB, .csv only</div>
+              <div style={{ fontWeight: 600, color: NAVY, fontSize: 15 }}>Drag & drop your Excel file here</div>
+              <div style={{ color: '#888', fontSize: 12, marginTop: 4 }}>or click to browse — .xlsx only, max 10 MB</div>
             </>
           )}
         </div>
 
-        <input ref={fileRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={e => e.target.files[0] && handleFile(e.target.files[0])} />
+        <input ref={fileRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style={{ display: 'none' }} onChange={e => e.target.files[0] && handleFile(e.target.files[0])} />
 
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <button

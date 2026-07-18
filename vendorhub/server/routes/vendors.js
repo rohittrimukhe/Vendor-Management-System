@@ -1,4 +1,5 @@
 const express = require('express');
+const XLSX = require('xlsx');
 const { db } = require('../db');
 const requireAuth = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
@@ -159,171 +160,140 @@ router.post('/bulk', requirePermission('Vendors', 'Edit'), (req, res) => {
   return res.status(400).json({ error: 'Unknown action' });
 });
 
-// CSV Export — must be before /:id routes
+// Excel Export — must be before /:id routes
 router.get('/export', requirePermission('Vendors', 'Read'), (req, res) => {
-  // M-9: Apply visibility filter — non-admins only export vendors they can see
   const userId = req.session.userId;
   const isAdmin = (() => { const u = db.prepare('SELECT group_id FROM users WHERE id=?').get(userId); return u?.group_id === 1; })();
   const vendors = isAdmin
     ? db.prepare('SELECT * FROM vendors ORDER BY name').all()
     : db.prepare(`SELECT v.* FROM vendors v WHERE v.visibility = 'everyone' OR v.visibility IS NULL OR EXISTS (SELECT 1 FROM vendor_visibility_users vvu WHERE vvu.vendor_id = v.id AND vvu.user_id = ?) ORDER BY v.name`).all(userId);
-  const header = ['id','name','gstin','website','address','geo_scope','empanelment_status','tier','vendor_type','summary','added_by','added_date'];
-  const rows = [header.join(',')];
-  for (const v of vendors) {
-    const domains = db.prepare('SELECT domain FROM vendor_domains WHERE vendor_id = ?').all(v.id).map(r => r.domain).join('|');
-    const tags = db.prepare('SELECT tag FROM vendor_tags WHERE vendor_id = ?').all(v.id).map(r => r.tag).join('|');
-    const risk = computeRisk(v.id);
-    const row = [...header.map(h => {
-      const val = h === 'domains' ? domains : h === 'tags' ? tags : (v[h] ?? '');
-      return '"' + String(val).replace(/"/g, '""') + '"';
-    }), '"' + domains + '"', '"' + tags + '"', '"' + risk.level + '"'];
-    rows.push(row.join(','));
-  }
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', 'attachment; filename="vendors-export.csv"');
-  res.send(rows.join('\n'));
+
+  const rows = vendors.map((v, idx) => ({
+    'Sr.No': idx + 1,
+    'Name': v.name || '',
+    'Email': v.primary_email || '',
+    'Mobile': v.primary_phone || '',
+    'Address': v.address || '',
+    'Details': v.summary || '',
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows, { header: ['Sr.No', 'Name', 'Email', 'Mobile', 'Address', 'Details'] });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', 'attachment; filename="LRS-vendor-details.xlsx"');
+  res.send(buf);
 });
 
-// CSV Template download — must be before /:id routes
-const TEMPLATE_VERSION = '2025-07-05-v2';
+// Excel Template download — must be before /:id routes
+const TEMPLATE_VERSION = '2025-07-18-v3';
 router.get('/import/template', requirePermission('Vendors', 'Read'), (req, res) => {
-  // added_by and added_date are intentionally excluded — set by the system from session + server clock
-  const header = ['name','gstin','website','address','geo_scope','empanelment_status','tier','vendor_type','summary','domains','tags'];
-  const sample = [
-    'Acme Technologies Pvt Ltd',
-    '27AABCU9603R1ZX',
-    'https://acme.example.com',
-    '101 Tech Park, Mumbai 400001',
-    'National',
-    'In Evaluation',
-    'Tier 2',
-    'IT Services',
-    'End-to-end IT solutions and managed services',
-    'ERP|Cloud|Security',
-    'preferred|shortlisted',
-  ];
-  const csv = [
-    `# VendorHub Import Template v${TEMPLATE_VERSION}`,
-    '# Lines starting with # are comments and will be ignored during import',
-    '# Required: name | Optional: all other columns',
-    '# empanelment_status: Empanelled | In Evaluation | On Hold | Archived (default: In Evaluation)',
-    '# tier: Tier 1 | Tier 2 | Tier 3 (default: Tier 2)',
-    '# vendor_type: IT Services | IT Products | Consulting | Infrastructure | Cloud Services | Managed Services | Other',
-    '# domains/tags: separate multiple values with pipe (|)  e.g. ERP|Cloud|Security',
-    '# NOTE: added_by and added_date are set automatically by the system and cannot be supplied via import',
-    header.join(','),
-    sample.map(v => `"${v}"`).join(','),
-  ].join('\n');
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', `attachment; filename="vendorhub-import-template-${TEMPLATE_VERSION}.csv"`);
+  // Sr.No is informational only — system ignores it on import (auto-assigned)
+  // added_by and added_date always come from session + server clock (audit integrity)
+  const sample = [{
+    'Sr.No': 1,
+    'Name': 'iThinker LLP',
+    'Email': 'contact@example.com',
+    'Mobile': '9876543210',
+    'Address': '101 Tech Park, Mumbai 400001',
+    'Details': 'Brief description of the vendor and their services',
+  }];
+  const ws = XLSX.utils.json_to_sheet(sample, { header: ['Sr.No', 'Name', 'Email', 'Mobile', 'Address', 'Details'] });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="LRS-vendor-import-template-${TEMPLATE_VERSION}.xlsx"`);
   res.setHeader('X-Template-Version', TEMPLATE_VERSION);
-  res.send(csv);
+  res.send(buf);
 });
 
-// CSV Import
+// Excel Import (accepts .xlsx files matching LRS template: Sr.No, Name, Email, Mobile, Address, Details)
 const multer = require('multer');
-const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
-router.post('/import', requirePermission('Vendors', 'Edit'), csvUpload.single('file'), (req, res) => {
+const xlsxUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      || file.originalname.toLowerCase().endsWith('.xlsx');
+    if (ok) cb(null, true);
+    else cb(new Error('Only .xlsx Excel files are accepted for import'));
+  },
+});
+
+router.post('/import', requirePermission('Vendors', 'Edit'), xlsxUpload.single('file'), (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'CSV file required' });
-    const text = req.file.buffer.toString('utf-8');
-    // Strip comment lines (# prefix) before splitting
-    const lines = text.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
-    if (lines.length < 2) return res.status(400).json({ error: 'CSV must have a header row + at least one data row' });
-    // C-7: Limit rows per import to prevent abuse / runaway transactions
+    if (!req.file) return res.status(400).json({ error: 'Excel (.xlsx) file required' });
+
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+    if (!rows.length) return res.status(400).json({ error: 'No data rows found in the Excel file' });
+
+    // C-7: Row limit
     const MAX_ROWS = 500;
-    if (lines.length - 1 > MAX_ROWS) return res.status(400).json({ error: `Import limit is ${MAX_ROWS} rows per file` });
+    if (rows.length > MAX_ROWS) return res.status(400).json({ error: `Import limit is ${MAX_ROWS} rows per file` });
 
-    const VALID_STATUS = new Set(['Empanelled', 'In Evaluation', 'On Hold', 'Archived']);
-    const VALID_TIER = new Set(['Tier 1', 'Tier 2', 'Tier 3']);
-    const VALID_TYPE = new Set(['IT Services', 'IT Products', 'Consulting', 'Infrastructure', 'Cloud Services', 'Managed Services', 'Other']);
-
-    const header = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim().toLowerCase());
-    if (!header.includes('name')) return res.status(400).json({ error: "CSV header must include a 'name' column" });
+    // Normalise header keys (trim + lowercase for matching)
+    const normalise = (obj) => {
+      const out = {};
+      for (const k of Object.keys(obj)) out[k.trim().toLowerCase()] = String(obj[k]).trim();
+      return out;
+    };
 
     const user = db.prepare('SELECT username FROM users WHERE id = ?').get(req.session.userId);
     const today = new Date().toISOString().split('T')[0];
 
     const insertVendor = db.prepare(`
-      INSERT INTO vendors (name, gstin, website, address, geo_scope, empanelment_status, tier, vendor_type, summary, logo_initial, logo_color, added_by, added_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO vendors (name, primary_email, primary_phone, address, summary, logo_initial, logo_color, added_by, added_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     let imported = 0;
     const logs = [];
 
     const importAll = db.transaction(() => {
-      for (let i = 1; i < lines.length; i++) {
-        const rowNum = i + 1; // 1-indexed, accounting for header
-        // Parse CSV fields (handles quoted fields with commas inside)
-        const cols = [];
-        let cur = '', inQuote = false;
-        for (const ch of lines[i] + ',') {
-          if (ch === '"') { inQuote = !inQuote; }
-          else if (ch === ',' && !inQuote) { cols.push(cur.trim()); cur = ''; }
-          else { cur += ch; }
-        }
-        const row = {};
-        header.forEach((h, idx) => { row[h] = (cols[idx] || '').replace(/^"|"$/g, '').trim(); });
+      rows.forEach((rawRow, idx) => {
+        const rowNum = idx + 2; // +2: 1-indexed + header row
+        const row = normalise(rawRow);
 
-        // Validate required
-        if (!row.name) {
-          logs.push({ row: rowNum, status: 'failed', name: row.name || '(empty)', reason: "Required column 'name' is missing or empty" });
-          continue;
+        const name = row['name'] || row['name '] || '';
+        if (!name) {
+          logs.push({ row: rowNum, status: 'failed', name: '(empty)', reason: "Required column 'Name' is empty" });
+          return;
         }
 
         // Check duplicate name
-        const existing = db.prepare('SELECT id FROM vendors WHERE LOWER(name) = LOWER(?)').get(row.name);
+        const existing = db.prepare('SELECT id FROM vendors WHERE LOWER(name) = LOWER(?)').get(name);
         if (existing) {
-          logs.push({ row: rowNum, status: 'failed', name: row.name, reason: `Vendor '${row.name}' already exists (ID ${existing.id})` });
-          continue;
+          logs.push({ row: rowNum, status: 'failed', name, reason: `Vendor '${name}' already exists (ID ${existing.id})` });
+          return;
         }
 
-        // Validate optional enum fields — warn but use default
-        const warnings = [];
-        let status = row.empanelment_status;
-        if (status && !VALID_STATUS.has(status)) { warnings.push(`empanelment_status '${status}' not recognised — defaulting to 'In Evaluation'`); status = ''; }
-        let tier = row.tier;
-        if (tier && !VALID_TIER.has(tier)) { warnings.push(`tier '${tier}' not recognised — defaulting to 'Tier 2'`); tier = ''; }
-        let vtype = row.vendor_type;
-        if (vtype && !VALID_TYPE.has(vtype)) { warnings.push(`vendor_type '${vtype}' not recognised — will be stored as-is`); }
-
-        // Silently ignore any added_date / added_by columns in the CSV — always use system values
-        // This is an intentional security and audit control: timestamps and authorship must come
-        // from the server clock and authenticated session, never from user-supplied data.
+        const email = row['email'] || row['email '] || null;
+        const mobile = row['mobile'] || row['mobile '] || null;
+        const address = row['address'] || row['address '] || null;
+        const details = row['details'] || row['details '] || null;
 
         try {
           const color = COLORS[Math.floor(Math.random() * COLORS.length)];
-          const result = insertVendor.run(
-            row.name, row.gstin || null, row.website || null, row.address || null,
-            row.geo_scope || null, status || 'In Evaluation',
-            tier || 'Tier 2', vtype || null, row.summary || null,
-            row.name[0].toUpperCase(), color, user?.username || 'import', today
-          );
-          const vendorId = result.lastInsertRowid;
-          if (row.domains) {
-            const ins = db.prepare('INSERT INTO vendor_domains (vendor_id, domain) VALUES (?, ?)');
-            row.domains.split('|').filter(Boolean).forEach(d => ins.run(vendorId, d.trim()));
-          }
-          if (row.tags) {
-            const ins = db.prepare('INSERT INTO vendor_tags (vendor_id, tag) VALUES (?, ?)');
-            row.tags.split('|').filter(Boolean).forEach(t => ins.run(vendorId, t.trim()));
-          }
+          insertVendor.run(name, email || null, mobile || null, address || null, details || null,
+            name[0].toUpperCase(), color, user?.username || 'import', today);
           imported++;
-          logs.push({
-            row: rowNum, status: warnings.length ? 'imported_with_warnings' : 'imported',
-            name: row.name, reason: warnings.length ? warnings.join('; ') : null,
-          });
+          logs.push({ row: rowNum, status: 'imported', name, reason: null });
         } catch (insertErr) {
-          logs.push({ row: rowNum, status: 'failed', name: row.name, reason: insertErr.message });
+          logs.push({ row: rowNum, status: 'failed', name, reason: insertErr.message });
         }
-      }
+      });
     });
     importAll();
 
     const failed = logs.filter(l => l.status === 'failed').length;
-    const warned = logs.filter(l => l.status === 'imported_with_warnings').length;
-    res.json({ data: { imported, failed, warned, total: lines.length - 1, logs } });
+    res.json({ data: { imported, failed, warned: 0, total: rows.length, logs } });
   } catch (err) {
     console.error('[vendors/import]', err);
     res.status(500).json({ error: 'Import failed' });
