@@ -179,7 +179,7 @@ async function buildLrsWorkbook(dataRows) {
 
   const THIN = { style: 'thin' };
   const BORDER = { top: THIN, left: THIN, bottom: THIN, right: THIN };
-  const FONT = { name: 'Calibri', size: 7 };
+  const FONT = { name: 'Calibri', size: 12 };
 
   // Header row
   const hdr = ws.addRow(['Sr.No', 'Name', 'Email', 'Mobile', 'Address', 'Details']);
