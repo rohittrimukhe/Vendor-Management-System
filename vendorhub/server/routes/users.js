@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const { db } = require('../db');
 const requireAuth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/permissions');
+const { auditLog } = require('../middleware/audit');
 const router = express.Router();
 
 router.use(requireAuth);
@@ -22,10 +23,11 @@ router.get('/', (req, res) => {
   res.json({ data: users });
 });
 
-router.post('/', async (req, res) => {
+router.post('/', auditLog('User', 'CREATE', (req, resBody) => resBody?.data?.id), async (req, res) => {
   try {
     const { name, email, username, password, group_id, department, reporting_manager_id } = req.body;
     if (!name || !username || !password) return res.status(400).json({ error: 'Name, username and password required' });
+    if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
     const hash = await bcrypt.hash(password, 12);
     const result = db.prepare(
       'INSERT INTO users (name, email, username, password_hash, group_id, department, reporting_manager_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
@@ -34,14 +36,16 @@ router.post('/', async (req, res) => {
     res.status(201).json({ data: user });
   } catch (err) {
     if (err.message.includes('UNIQUE')) return res.status(400).json({ error: 'Username or email already exists' });
-    res.status(500).json({ error: err.message });
+    console.error('[users/create]', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', auditLog('User', 'UPDATE', (req) => req.params.id), async (req, res) => {
   try {
     const { name, email, group_id, department, status, password, reporting_manager_id } = req.body;
     if (password) {
+      if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
       const hash = await bcrypt.hash(password, 12);
       db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hash, req.params.id);
     }
@@ -53,24 +57,26 @@ router.put('/:id', async (req, res) => {
     const user = db.prepare('SELECT id, name, email, username, group_id, department, status, reporting_manager_id FROM users WHERE id = ?').get(req.params.id);
     res.json({ data: user });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[users/update]', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
-router.post('/:id/reset-password', async (req, res) => {
+router.post('/:id/reset-password', auditLog('User', 'RESET_PASSWORD', (req) => req.params.id), async (req, res) => {
   try {
     const { password } = req.body;
     if (!password) return res.status(400).json({ error: 'Password required' });
+    if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
     const hash = await bcrypt.hash(password, 12);
     db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hash, req.params.id);
     res.json({ data: { success: true } });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[users/reset-password]', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
-router.post('/:id/toggle-status', (req, res) => {
-  // Prevent deactivating self
+router.post('/:id/toggle-status', auditLog('User', 'TOGGLE_STATUS', (req) => req.params.id), (req, res) => {
   if (parseInt(req.params.id) === req.session.userId) return res.status(400).json({ error: 'Cannot deactivate your own account' });
   const user = db.prepare('SELECT status FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
@@ -79,7 +85,7 @@ router.post('/:id/toggle-status', (req, res) => {
   res.json({ data: { status: newStatus } });
 });
 
-router.delete('/:id', (req, res) => {
+router.delete('/:id', auditLog('User', 'DELETE', (req) => req.params.id), (req, res) => {
   if (parseInt(req.params.id) === req.session.userId) return res.status(400).json({ error: 'Cannot delete your own account' });
   db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
   res.json({ data: { success: true } });

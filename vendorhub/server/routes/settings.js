@@ -28,9 +28,17 @@ const logoUpload = multer({
   },
 });
 
-// Any authenticated user reads public settings
+// H-1: Sensitive keys never leave the server — only admins may read SMTP credentials
+const SENSITIVE_KEYS = new Set(['smtp_pass', 'smtp_user', 'smtp_host', 'smtp_port', 'smtp_from', 'smtp_enabled', 'admin_email']);
+
 router.get('/', (req, res) => {
-  const rows = db.prepare("SELECT key, value FROM settings WHERE key NOT IN ('session_secret','initialized')").all();
+  const isAdmin = req.session?.isAdmin || (() => {
+    if (!req.session?.userId) return false;
+    const u = db.prepare('SELECT group_id FROM users WHERE id=?').get(req.session.userId);
+    return u?.group_id === 1;
+  })();
+  let rows = db.prepare("SELECT key, value FROM settings WHERE key NOT IN ('session_secret','initialized')").all();
+  if (!isAdmin) rows = rows.filter(r => !SENSITIVE_KEYS.has(r.key));
   res.json({ data: rows });
 });
 
@@ -80,7 +88,8 @@ router.delete('/logo', requireAdmin, (req, res) => {
     db.prepare("DELETE FROM settings WHERE key='company_logo'").run();
     res.json({ data: { success: true } });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error('[settings/logo-delete]', e);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -100,7 +109,8 @@ router.post('/test-email', requireAdmin, async (req, res) => {
     await transporter.sendMail({ from, to, subject: 'VendorHub Test Email', text: 'This is a test email from VendorHub. Your SMTP configuration is working correctly!' });
     res.json({ data: { sent: true, to } });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error('[settings/test-email]', e);
+    res.status(500).json({ error: e.message }); // intentional: SMTP errors are user-actionable config feedback
   }
 });
 

@@ -25,8 +25,21 @@ const PORT = (() => {
   return parseInt(process.env.PORT) || 8080;
 })();
 
-// Middleware
-app.use(cors({ origin: true, credentials: true }));
+// C-1: Restrict CORS to known origins — never reflect arbitrary Origin headers
+const ALLOWED_ORIGINS = [
+  'http://localhost:5173',
+  'http://localhost:8080',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:8080',
+];
+app.use(cors({
+  origin: (origin, cb) => {
+    // Allow requests with no origin (curl, server-to-server) and known origins
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    cb(new Error('CORS: origin not allowed'));
+  },
+  credentials: true,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -39,11 +52,12 @@ const sessionSecret = (() => {
   return secret;
 })();
 
+// C-3: Add sameSite to prevent CSRF; secure flag deferred to TLS terminator
 app.use(session({
   secret: sessionSecret,
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 8 * 60 * 60 * 1000, httpOnly: true }
+  cookie: { maxAge: 8 * 60 * 60 * 1000, httpOnly: true, sameSite: 'Lax' }
 }));
 
 // Public branding endpoint — no auth required (used by login page)

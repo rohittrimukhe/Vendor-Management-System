@@ -22,8 +22,14 @@ router.get('/', (req, res) => {
 });
 
 router.delete('/clear', (req, res) => {
-  const { days = 90 } = req.body;
-  db.prepare(`DELETE FROM audit_log WHERE created_at < date('now', '-${parseInt(days)} days')`).run();
+  // C-4: Validate days as integer in safe range; use parameterized query
+  // M-6/M-14: Enforce minimum 30-day retention
+  const raw = parseInt(req.body.days, 10);
+  if (!Number.isFinite(raw) || raw < 30 || raw > 3650) {
+    return res.status(400).json({ error: 'days must be an integer between 30 and 3650' });
+  }
+  // SQLite date modifier requires string concatenation but we've already validated raw as a safe integer
+  db.prepare("DELETE FROM audit_log WHERE created_at < date('now', '-' || ? || ' days')").run(String(raw));
   res.json({ data: { success: true } });
 });
 
