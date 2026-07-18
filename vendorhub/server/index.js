@@ -26,15 +26,18 @@ const PORT = (() => {
 })();
 
 // C-1: Restrict CORS to known origins — never reflect arbitrary Origin headers
+// Add production hostnames to VENDORHUB_ALLOWED_ORIGINS env var (comma-separated)
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
   'http://localhost:8080',
   'http://127.0.0.1:5173',
   'http://127.0.0.1:8080',
+  ...(process.env.VENDORHUB_ALLOWED_ORIGINS
+    ? process.env.VENDORHUB_ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
+    : []),
 ];
 app.use(cors({
   origin: (origin, cb) => {
-    // Allow requests with no origin (curl, server-to-server) and known origins
     if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
     cb(new Error('CORS: origin not allowed'));
   },
@@ -52,12 +55,19 @@ const sessionSecret = (() => {
   return secret;
 })();
 
-// C-3: Add sameSite to prevent CSRF; secure flag deferred to TLS terminator
+// C-3: sameSite prevents CSRF; secure flag auto-enabled when behind TLS proxy
+const isTLSProxy = process.env.VENDORHUB_TRUST_PROXY === 'true';
+if (isTLSProxy) app.set('trust proxy', 1);
 app.use(session({
   secret: sessionSecret,
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 8 * 60 * 60 * 1000, httpOnly: true, sameSite: 'Lax' }
+  cookie: {
+    maxAge: 8 * 60 * 60 * 1000,
+    httpOnly: true,
+    sameSite: 'Lax',
+    secure: isTLSProxy,
+  },
 }));
 
 // Public branding endpoint — no auth required (used by login page)
@@ -257,8 +267,7 @@ function scheduleEmailAlerts() {
 }
 
 app.listen(PORT, () => {
-  console.log(`[VendorHub] Server running on http://localhost:${PORT}`);
-  console.log(`[VendorHub] First run: ${isFirstRun()}`);
+  console.log(`[VendorHub] Server running on port ${PORT}`);
   try { scheduleBackups(); } catch {}
   try { scheduleEmailAlerts(); } catch {}
 });

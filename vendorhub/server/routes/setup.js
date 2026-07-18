@@ -45,7 +45,7 @@ router.post('/init', async (req, res) => {
 
     // Save org settings
     const saveSettings = db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)");
-    saveSettings.run('org_name', org_name || 'LRS Services Pvt Ltd');
+    saveSettings.run('org_name', org_name || 'My Organization');
     saveSettings.run('timezone', timezone || 'Asia/Kolkata');
     saveSettings.run('currency', currency || 'INR');
     saveSettings.run('primary_domain', primary_domain || '');

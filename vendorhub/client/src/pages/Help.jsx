@@ -12,7 +12,7 @@ const sections = [
     topics: [
       {
         q: 'What is VendorHub?',
-        a: `VendorHub is a Vendor Management System built for LRS Services Pvt Ltd. It helps you:
+        a: `VendorHub is a Vendor Management System that helps you:
 • Keep a central list of all vendors (suppliers, contractors, service providers)
 • Store their contacts, documents, contracts, and performance scores
 • Control who in your company can see or edit information
@@ -22,7 +22,7 @@ Think of it as a smart digital filing cabinet for all your vendor relationships.
       },
       {
         q: 'How do I log in?',
-        a: `Go to http://localhost:8080 in your browser. Enter your Username and Password, then click Sign In.
+        a: `Open VendorHub in your browser (e.g. http://YOUR-SERVER:8080). Enter your Username and Password, then click Sign In.
 
 Your username and password were created either during the Setup Wizard (for the first admin account) or by your System Administrator.
 
