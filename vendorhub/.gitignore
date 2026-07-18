@@ -7,3 +7,6 @@ backups/*.db
 uploads/*/
 client/dist/
 *.log
+.env
+.env.local
+.env.*.local

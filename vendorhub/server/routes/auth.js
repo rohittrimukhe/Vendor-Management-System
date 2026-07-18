@@ -73,7 +73,7 @@ router.put('/profile', async (req, res) => {
       const match = await bcrypt.compare(currentPassword, user.password_hash);
       if (!match) return res.status(400).json({ error: 'Current password is incorrect' });
       if (newPassword.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters' });
-      updates.password_hash = await bcrypt.hash(newPassword, 10);
+      updates.password_hash = await bcrypt.hash(newPassword, 12);
     }
 
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'Nothing to update' });
