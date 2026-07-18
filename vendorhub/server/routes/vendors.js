@@ -167,22 +167,23 @@ async function buildLrsWorkbook(dataRows) {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Sheet1');
 
-  // Column widths (user-specified)
+  // Details column fixed; A-E auto-sized from content with padding
   ws.columns = [
-    { key: 'srNo',    width: 5.14 },
-    { key: 'name',    width: 11.43 },
-    { key: 'email',   width: 30 },
-    { key: 'mobile',  width: 30 },
-    { key: 'address', width: 50 },
+    { key: 'srNo',    width: 10 },  // placeholder, overwritten below
+    { key: 'name',    width: 10 },
+    { key: 'email',   width: 10 },
+    { key: 'mobile',  width: 10 },
+    { key: 'address', width: 10 },
     { key: 'details', width: 70 },
   ];
 
   const THIN = { style: 'thin' };
   const BORDER = { top: THIN, left: THIN, bottom: THIN, right: THIN };
   const FONT = { name: 'Calibri', size: 12 };
+  const HEADERS = ['Sr.No', 'Name', 'Email', 'Mobile', 'Address', 'Details'];
 
   // Header row
-  const hdr = ws.addRow(['Sr.No', 'Name', 'Email', 'Mobile', 'Address', 'Details']);
+  const hdr = ws.addRow(HEADERS);
   hdr.eachCell(cell => {
     cell.font = { ...FONT, bold: false };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
@@ -199,12 +200,21 @@ async function buildLrsWorkbook(dataRows) {
       cell.font = FONT;
       cell.border = BORDER;
       if (colNum <= 5) {
-        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: colNum === 5 };
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
       } else {
         cell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
       }
     });
   }
+
+  // Auto-size columns A-E: max content length + generous padding (4 chars)
+  const PAD = 4;
+  const autoKeys = ['srNo', 'name', 'email', 'mobile', 'address'];
+  const headerLabels = ['Sr.No', 'Name', 'Email', 'Mobile', 'Address'];
+  autoKeys.forEach((key, idx) => {
+    const maxLen = dataRows.reduce((m, d) => Math.max(m, String(d[key] || '').length), headerLabels[idx].length);
+    ws.getColumn(idx + 1).width = maxLen + PAD;
+  });
 
   // Page margins
   ws.pageSetup.margins = { left: 0.7, right: 0.7, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 };
