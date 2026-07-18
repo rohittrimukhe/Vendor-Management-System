@@ -1,5 +1,6 @@
 const express = require('express');
 const XLSX = require('xlsx');
+const ExcelJS = require('exceljs');
 const { db } = require('../db');
 const requireAuth = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
@@ -160,27 +161,76 @@ router.post('/bulk', requirePermission('Vendors', 'Edit'), (req, res) => {
   return res.status(400).json({ error: 'Unknown action' });
 });
 
+// Shared helper — builds a styled LRS workbook (ExcelJS) from row data
+async function buildLrsWorkbook(dataRows) {
+  // dataRows: array of {srNo, name, email, mobile, address, details}
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Sheet1');
+
+  // Column widths (matched to reference file)
+  ws.columns = [
+    { key: 'srNo',    width: 8.73 },
+    { key: 'name',    width: 10.63 },
+    { key: 'email',   width: 17.36 },
+    { key: 'mobile',  width: 21.91 },
+    { key: 'address', width: 39.73 },
+    { key: 'details', width: 67.09 },
+  ];
+
+  const THIN = { style: 'thin' };
+  const BORDER = { top: THIN, left: THIN, bottom: THIN, right: THIN };
+  const FONT = { name: 'Calibri', size: 7 };
+
+  // Header row
+  const hdr = ws.addRow(['Sr.No', 'Name', 'Email', 'Mobile', 'Address', 'Details']);
+  hdr.eachCell(cell => {
+    cell.font = { ...FONT, bold: false };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
+    cell.border = BORDER;
+  });
+
+  // Data rows
+  for (let i = 0; i < dataRows.length; i++) {
+    const d = dataRows[i];
+    const row = ws.addRow([d.srNo, d.name, d.email, d.mobile, d.address, d.details]);
+    row.height = 85.5;
+    row.eachCell((cell, colNum) => {
+      cell.font = FONT;
+      cell.border = BORDER;
+      if (colNum <= 5) {
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: colNum === 5 };
+      } else {
+        cell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
+      }
+    });
+  }
+
+  // Page margins
+  ws.pageSetup.margins = { left: 0.7, right: 0.7, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 };
+
+  return wb;
+}
+
 // Excel Export — must be before /:id routes
-router.get('/export', requirePermission('Vendors', 'Read'), (req, res) => {
+router.get('/export', requirePermission('Vendors', 'Read'), async (req, res) => {
   const userId = req.session.userId;
   const isAdmin = (() => { const u = db.prepare('SELECT group_id FROM users WHERE id=?').get(userId); return u?.group_id === 1; })();
   const vendors = isAdmin
     ? db.prepare('SELECT * FROM vendors ORDER BY name').all()
     : db.prepare(`SELECT v.* FROM vendors v WHERE v.visibility = 'everyone' OR v.visibility IS NULL OR EXISTS (SELECT 1 FROM vendor_visibility_users vvu WHERE vvu.vendor_id = v.id AND vvu.user_id = ?) ORDER BY v.name`).all(userId);
 
-  const rows = vendors.map((v, idx) => ({
-    'Sr.No': idx + 1,
-    'Name': v.name || '',
-    'Email': v.primary_email || '',
-    'Mobile': v.primary_phone || '',
-    'Address': v.address || '',
-    'Details': v.summary || '',
+  const dataRows = vendors.map((v, idx) => ({
+    srNo: idx + 1,
+    name: v.name || '',
+    email: v.primary_email || '',
+    mobile: v.primary_phone || '',
+    address: v.address || '',
+    details: v.summary || '',
   }));
 
-  const ws = XLSX.utils.json_to_sheet(rows, { header: ['Sr.No', 'Name', 'Email', 'Mobile', 'Address', 'Details'] });
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const wb = await buildLrsWorkbook(dataRows);
+  const buf = await wb.xlsx.writeBuffer();
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', 'attachment; filename="LRS-vendor-details.xlsx"');
@@ -189,21 +239,19 @@ router.get('/export', requirePermission('Vendors', 'Read'), (req, res) => {
 
 // Excel Template download — must be before /:id routes
 const TEMPLATE_VERSION = '2025-07-18-v3';
-router.get('/import/template', requirePermission('Vendors', 'Read'), (req, res) => {
+router.get('/import/template', requirePermission('Vendors', 'Read'), async (req, res) => {
   // Sr.No is informational only — system ignores it on import (auto-assigned)
   // added_by and added_date always come from session + server clock (audit integrity)
   const sample = [{
-    'Sr.No': 1,
-    'Name': 'iThinker LLP',
-    'Email': 'contact@example.com',
-    'Mobile': '9876543210',
-    'Address': '101 Tech Park, Mumbai 400001',
-    'Details': 'Brief description of the vendor and their services',
+    srNo: 1,
+    name: 'iThinker LLP',
+    email: 'contact@example.com',
+    mobile: '9876543210',
+    address: '101 Tech Park, Mumbai 400001',
+    details: 'Brief description of the vendor and their services',
   }];
-  const ws = XLSX.utils.json_to_sheet(sample, { header: ['Sr.No', 'Name', 'Email', 'Mobile', 'Address', 'Details'] });
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const wb = await buildLrsWorkbook(sample);
+  const buf = await wb.xlsx.writeBuffer();
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="LRS-vendor-import-template-${TEMPLATE_VERSION}.xlsx"`);
