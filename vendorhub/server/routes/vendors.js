@@ -202,11 +202,9 @@ async function buildLrsWorkbook(dataRows) {
       if (colNum <= 4) {
         cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: false };
       } else if (colNum === 5) {
-        // Address: wrap text, left/top
-        cell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
+        cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
       } else {
-        // Details: wrap text, left/top
-        cell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
+        cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
       }
     });
   }
