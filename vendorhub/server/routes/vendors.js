@@ -167,14 +167,14 @@ async function buildLrsWorkbook(dataRows) {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Sheet1');
 
-  // Column widths (matched to reference file)
+  // Column widths (user-specified)
   ws.columns = [
-    { key: 'srNo',    width: 8.73 },
-    { key: 'name',    width: 10.63 },
-    { key: 'email',   width: 17.36 },
-    { key: 'mobile',  width: 21.91 },
-    { key: 'address', width: 39.73 },
-    { key: 'details', width: 67.09 },
+    { key: 'srNo',    width: 5.14 },
+    { key: 'name',    width: 11.43 },
+    { key: 'email',   width: 30 },
+    { key: 'mobile',  width: 30 },
+    { key: 'address', width: 50 },
+    { key: 'details', width: 70 },
   ];
 
   const THIN = { style: 'thin' };
@@ -194,7 +194,7 @@ async function buildLrsWorkbook(dataRows) {
   for (let i = 0; i < dataRows.length; i++) {
     const d = dataRows[i];
     const row = ws.addRow([d.srNo, d.name, d.email, d.mobile, d.address, d.details]);
-    row.height = 85.5;
+    // No fixed height — let Excel auto-size based on wrapped content
     row.eachCell((cell, colNum) => {
       cell.font = FONT;
       cell.border = BORDER;
