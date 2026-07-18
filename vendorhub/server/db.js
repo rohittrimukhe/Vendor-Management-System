@@ -257,6 +257,8 @@ const migrations = [
     note TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`,
+  `ALTER TABLE vendors ADD COLUMN primary_email TEXT`,
+  `ALTER TABLE vendors ADD COLUMN primary_phone TEXT`,
 ];
 
 for (const sql of migrations) {
