@@ -32,20 +32,44 @@ const PORT = (() => {
   return parseInt(process.env.PORT) || 8080;
 })();
 
-// C-1: Restrict CORS to known origins — never reflect arbitrary Origin headers
-// Add production hostnames to VENDORHUB_ALLOWED_ORIGINS env var (comma-separated)
-const ALLOWED_ORIGINS = [
-  'http://localhost:5173',
-  'http://localhost:8080',
-  'http://127.0.0.1:5173',
-  'http://127.0.0.1:8080',
-  ...(process.env.VENDORHUB_ALLOWED_ORIGINS
-    ? process.env.VENDORHUB_ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
-    : []),
-];
+// C-1: Restrict CORS to known origins — never reflect arbitrary Origin headers.
+// When SSL is enabled the configured hostname is added automatically so the
+// browser can reach the API from the same server without CORS errors.
+function buildAllowedOrigins() {
+  const base = [
+    'http://localhost:5173',
+    'http://localhost:8080',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:8080',
+    ...(process.env.VENDORHUB_ALLOWED_ORIGINS
+      ? process.env.VENDORHUB_ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
+      : []),
+  ];
+
+  // Auto-add the configured SSL hostname / domain so accessing via FQDN or IP works
+  try {
+    const hostname = db.prepare("SELECT value FROM settings WHERE key='ssl_hostname'").get()?.value;
+    const domain   = db.prepare("SELECT value FROM settings WHERE key='ssl_domain'").get()?.value;
+    const httpsPort = parseInt(process.env.VENDORHUB_HTTPS_PORT) || 443;
+    const httpPort  = parseInt(process.env.PORT) || PORT;
+
+    for (const host of [hostname, domain].filter(Boolean)) {
+      // Standard ports (no port suffix in Origin)
+      base.push(`https://${host}`, `http://${host}`);
+      // Non-standard ports
+      if (httpsPort !== 443) base.push(`https://${host}:${httpsPort}`);
+      if (httpPort  !== 80)  base.push(`http://${host}:${httpPort}`);
+    }
+  } catch {}
+
+  return [...new Set(base)];
+}
+
+// Re-evaluate on every request so newly-saved hostnames take effect without restart
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    if (!origin) return cb(null, true); // curl / server-to-server
+    if (buildAllowedOrigins().includes(origin)) return cb(null, true);
     cb(new Error('CORS: origin not allowed'));
   },
   credentials: true,
