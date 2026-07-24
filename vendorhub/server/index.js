@@ -41,6 +41,13 @@ function buildAllowedOrigins() {
     'http://localhost:8080',
     'http://127.0.0.1:5173',
     'http://127.0.0.1:8080',
+    // HTTPS variants of localhost so browsers that auto-upgrade HTTP→HTTPS still work
+    'https://localhost',
+    'https://localhost:8080',
+    'https://localhost:443',
+    'https://127.0.0.1',
+    'https://127.0.0.1:8080',
+    'https://127.0.0.1:443',
     ...(process.env.VENDORHUB_ALLOWED_ORIGINS
       ? process.env.VENDORHUB_ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
       : []),
