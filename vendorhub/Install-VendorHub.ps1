@@ -240,6 +240,14 @@ echo  ============================================
 echo   VendorHub Server  -  LRS Services Pvt Ltd
 echo  ============================================
 echo.
+
+:: Kill any existing process holding the port so restarts never hit EADDRINUSE
+for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":%Port% " ^| findstr LISTENING') do (
+    echo  Stopping previous instance (PID %%a)...
+    taskkill /F /PID %%a >nul 2>&1
+)
+timeout /t 1 /nobreak >nul
+
 echo  Server starting on http://localhost:$Port
 echo  Keep this window open while using VendorHub.
 echo  Close this window to stop the server.
