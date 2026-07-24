@@ -3,9 +3,12 @@ const session = require('express-session');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
+const https = require('https');
 const cron = require('node-cron');
 
 const { db, isFirstRun } = require('./db');
+const ssl = require('./ssl');
 
 const app = express();
 
@@ -14,6 +17,10 @@ const app = express();
   const p = path.join(__dirname, '..', dir);
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 });
+
+// ACME HTTP-01 challenge token store (Mode B) — shared with settings route
+const acmeChallengeTokens = new Map();
+app.locals.acmeChallengeTokens = acmeChallengeTokens;
 
 // PORT: settable via Settings UI (stored in DB) or env var, fallback 8080
 const PORT = (() => {
@@ -266,10 +273,92 @@ function scheduleEmailAlerts() {
   });
 }
 
-app.listen(PORT, () => {
-  console.log(`[VendorHub] Server running on port ${PORT}`);
-  try { scheduleBackups(); } catch {}
-  try { scheduleEmailAlerts(); } catch {}
+// ─── ACME HTTP-01 challenge responder (Mode B) ───────────────────────────
+app.get('/.well-known/acme-challenge/:token', (req, res) => {
+  const auth = acmeChallengeTokens.get(req.params.token);
+  if (auth) return res.type('text/plain').send(auth);
+  res.status(404).end();
+});
+
+// ─── HTTPS / HTTP server startup ─────────────────────────────────────────
+async function startServer() {
+  const getSetting = k => db.prepare("SELECT value FROM settings WHERE key=?").get(k)?.value;
+  const sslMode    = getSetting('ssl_mode') || 'none';    // 'none' | 'self_signed' | 'lets_encrypt'
+  const hostname   = getSetting('ssl_hostname') || 'localhost';
+
+  const HTTPS_PORT = parseInt(process.env.VENDORHUB_HTTPS_PORT) || 443;
+  const HTTP_PORT  = parseInt(process.env.PORT) || PORT;
+
+  if (sslMode === 'self_signed') {
+    // Mode A — generate cert if missing, then serve HTTPS
+    const creds = ssl.generateSelfSigned(hostname);
+
+    // HTTP → HTTPS redirect on port 80 (or HTTP_PORT)
+    const redirectApp = express();
+    redirectApp.use((req, res) => {
+      const host = req.hostname;
+      res.redirect(301, `https://${host}:${HTTPS_PORT}${req.url}`);
+    });
+    http.createServer(redirectApp).listen(HTTP_PORT, () => {
+      console.log(`[VendorHub] HTTP redirect listening on port ${HTTP_PORT}`);
+    });
+
+    https.createServer({ key: creds.key, cert: creds.cert, ca: creds.ca }, app).listen(HTTPS_PORT, () => {
+      console.log(`[VendorHub] HTTPS (self-signed) listening on port ${HTTPS_PORT} — hostname: ${hostname}`);
+      try { scheduleBackups(); } catch {}
+      try { scheduleEmailAlerts(); } catch {}
+    });
+
+  } else if (sslMode === 'lets_encrypt') {
+    // Mode B — obtain/renew cert then serve HTTPS
+    const domain = getSetting('ssl_domain') || hostname;
+
+    // HTTP server must be up first so ACME challenge can respond on port 80
+    const httpServer = http.createServer(app).listen(80, () => {
+      console.log(`[VendorHub] HTTP (ACME challenge) listening on port 80`);
+    });
+
+    let creds;
+    if (ssl.leExists(domain)) {
+      creds = ssl.readLE(domain);
+      console.log(`[VendorHub SSL] Using existing Let's Encrypt cert for ${domain}`);
+    } else {
+      console.log(`[VendorHub SSL] Obtaining Let's Encrypt certificate for ${domain} …`);
+      creds = await ssl.obtainLE(domain, acmeChallengeTokens);
+    }
+
+    const httpsServer = https.createServer({ key: creds.key, cert: creds.cert }, app);
+    httpsServer.listen(HTTPS_PORT, () => {
+      console.log(`[VendorHub] HTTPS (Let's Encrypt) listening on port ${HTTPS_PORT} — domain: ${domain}`);
+      try { scheduleBackups(); } catch {}
+      try { scheduleEmailAlerts(); } catch {}
+    });
+
+    // Auto-renew every 60 days
+    cron.schedule('0 3 */60 * *', async () => {
+      try {
+        console.log(`[VendorHub SSL] Renewing Let's Encrypt certificate for ${domain} …`);
+        const renewed = await ssl.obtainLE(domain, acmeChallengeTokens);
+        httpsServer.setSecureContext({ key: renewed.key, cert: renewed.cert });
+        console.log(`[VendorHub SSL] Certificate renewed successfully`);
+      } catch (err) {
+        console.error(`[VendorHub SSL] Renewal failed:`, err.message);
+      }
+    });
+
+  } else {
+    // No SSL — plain HTTP (default until SSL is configured)
+    app.listen(HTTP_PORT, () => {
+      console.log(`[VendorHub] Server running on port ${HTTP_PORT} (HTTP)`);
+      try { scheduleBackups(); } catch {}
+      try { scheduleEmailAlerts(); } catch {}
+    });
+  }
+}
+
+startServer().catch(err => {
+  console.error('[VendorHub] Failed to start server:', err.message);
+  process.exit(1);
 });
 
 module.exports = app;

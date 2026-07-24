@@ -274,6 +274,9 @@ export default function Settings() {
           </div>
         </div>
 
+        {/* ── SSL / HTTPS ── */}
+        <SslPanel />
+
         {/* Save button */}
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <button onClick={saveAll} disabled={saving} style={{ padding: '10px 28px', background: NAVY, color: '#fff', border: 'none', borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
@@ -283,5 +286,92 @@ export default function Settings() {
         </div>
       </div>
     </Layout>
+  );
+}
+
+function SslPanel() {
+  const [hostname, setHostname] = React.useState('vms.lrsservices.local');
+  const [domain, setDomain]     = React.useState('');
+  const [mode, setMode]         = React.useState('self_signed');
+  const [log, setLog]           = React.useState('');
+  const [busy, setBusy]         = React.useState(false);
+
+  const addLog = msg => setLog(prev => prev + msg + '\n');
+  const api = window._vendorApi || (window._vendorApi = {
+    post: (url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(body) }).then(r => r.json()),
+  });
+
+  async function generate() {
+    setBusy(true);
+    setLog('');
+    try {
+      if (mode === 'self_signed') {
+        addLog('Generating self-signed certificate for ' + hostname + ' …');
+        const r = await fetch('/api/settings/ssl/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ hostname }) }).then(x => x.json());
+        if (r.error) addLog('❌ ' + r.error);
+        else addLog('✅ ' + r.data.message);
+      } else {
+        addLog('Requesting Let\'s Encrypt certificate for ' + domain + ' …');
+        const r = await fetch('/api/settings/ssl/lets-encrypt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ domain }) }).then(x => x.json());
+        if (r.error) addLog('❌ ' + r.error);
+        else addLog('✅ ' + r.data.message);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const inputStyle = { width: '100%', padding: '9px 12px', border: '1px solid #DDE2E8', borderRadius: 6, fontSize: 13, outline: 'none', boxSizing: 'border-box' };
+  const radioRow = (val, label, desc) => (
+    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px', borderRadius: 8, border: `2px solid ${mode === val ? '#1C3C6E' : '#DDE2E8'}`, background: mode === val ? '#F0F7FF' : '#fff', cursor: 'pointer', marginBottom: 10 }}>
+      <input type="radio" name="sslMode" value={val} checked={mode === val} onChange={() => setMode(val)} style={{ marginTop: 2 }} />
+      <div>
+        <div style={{ fontWeight: 600, fontSize: 13, color: '#1C3C6E' }}>{label}</div>
+        <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>{desc}</div>
+      </div>
+    </label>
+  );
+
+  return (
+    <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #E8ECF0', padding: 24, marginBottom: 24 }}>
+      <div style={{ fontWeight: 700, fontSize: 15, color: '#1C3C6E', marginBottom: 18 }}>🔒 SSL / HTTPS</div>
+
+      {radioRow('self_signed', 'Internal / Self-Signed', 'For .local hostnames — generates a private Root CA. Install the Root CA on client machines once to avoid browser warnings.')}
+      {mode === 'self_signed' && (
+        <div style={{ marginLeft: 20, marginBottom: 12 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: '#444', display: 'block', marginBottom: 4 }}>Hostname</label>
+          <input style={inputStyle} value={hostname} onChange={e => setHostname(e.target.value)} placeholder="vms.lrsservices.local" />
+        </div>
+      )}
+
+      {radioRow('lets_encrypt', "Public Domain / Let's Encrypt", "For a real internet domain. Free browser-trusted certificate. Requires port 80 & 443 open and DNS pointing to this server.")}
+      {mode === 'lets_encrypt' && (
+        <div style={{ marginLeft: 20, marginBottom: 12 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: '#444', display: 'block', marginBottom: 4 }}>Domain Name</label>
+          <input style={inputStyle} value={domain} onChange={e => setDomain(e.target.value)} placeholder="vms.yourcompany.in" />
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 10, marginTop: 4, flexWrap: 'wrap' }}>
+        <button onClick={generate} disabled={busy || (mode === 'lets_encrypt' && !domain)}
+          style={{ padding: '9px 20px', background: busy ? '#C0C8D4' : '#1C3C6E', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 600, fontSize: 13, cursor: busy ? 'wait' : 'pointer' }}>
+          {busy ? 'Generating…' : 'Generate / Renew Certificate'}
+        </button>
+        <a href="/api/settings/ssl/root-cert" download="vendorhub-root.crt"
+          style={{ padding: '9px 20px', background: '#F0F7FF', color: '#1C3C6E', border: '1px solid #C5DCF5', borderRadius: 6, fontWeight: 600, fontSize: 13, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+          ⬇ Download Root Certificate
+        </a>
+      </div>
+
+      {log && (
+        <pre style={{ background: '#0D1117', color: '#58A6FF', borderRadius: 8, padding: '12px 16px', fontSize: 12, marginTop: 14, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>{log}</pre>
+      )}
+
+      <div style={{ marginTop: 16, background: '#FFF8E1', border: '1px solid #FCD34D', borderRadius: 8, padding: '12px 14px', fontSize: 12, color: '#92400E' }}>
+        <strong>To install the Root CA on Windows client machines (run as Administrator in PowerShell):</strong>
+        <pre style={{ background: '#1C3C6E', color: '#A5F3FC', borderRadius: 6, padding: '8px 12px', fontSize: 11, marginTop: 6, whiteSpace: 'pre-wrap' }}>{`Import-Certificate -FilePath vendorhub-root.crt \`\n  -CertStoreLocation Cert:\\LocalMachine\\Root`}</pre>
+        After generating a certificate, <strong>restart the VendorHub server</strong> to activate HTTPS on port 443.
+      </div>
+    </div>
   );
 }

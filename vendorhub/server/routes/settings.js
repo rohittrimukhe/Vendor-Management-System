@@ -93,6 +93,62 @@ router.delete('/logo', requireAdmin, (req, res) => {
   }
 });
 
+// ─── SSL endpoints ───────────────────────────────────────────────────────
+
+// Download root CA certificate (for client trust-store installation)
+router.get('/ssl/root-cert', requireAdmin, (req, res) => {
+  const { ROOT_CERT_PATH } = require('../ssl');
+  if (!fs.existsSync(ROOT_CERT_PATH)) {
+    return res.status(404).json({ error: 'Root certificate not yet generated. Configure SSL in the Setup Wizard first.' });
+  }
+  res.setHeader('Content-Type', 'application/x-x509-ca-cert');
+  res.setHeader('Content-Disposition', 'attachment; filename="vendorhub-root.crt"');
+  res.sendFile(ROOT_CERT_PATH);
+});
+
+// Generate / regenerate self-signed cert (can be called from Settings after hostname change)
+router.post('/ssl/generate', requireAdmin, (req, res) => {
+  try {
+    const { hostname } = req.body;
+    if (!hostname || typeof hostname !== 'string') return res.status(400).json({ error: 'hostname required' });
+    const sslMod = require('../ssl');
+    // Remove existing certs so they get regenerated for the new hostname
+    const { CERT_DIR } = sslMod;
+    ['vendorhub-server.key', 'vendorhub-server.crt', 'vendorhub-root.key', 'vendorhub-root.crt'].forEach(f => {
+      const p = require('path').join(CERT_DIR, f);
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+    });
+    sslMod.generateSelfSigned(hostname);
+    // Persist the hostname in DB settings
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('ssl_hostname', ?)").run(hostname);
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('ssl_mode', 'self_signed')").run();
+    res.json({ data: { success: true, message: `Self-signed certificate generated for ${hostname}. Restart the server to enable HTTPS.` } });
+  } catch (e) {
+    console.error('[settings/ssl/generate]', e);
+    res.status(500).json({ error: 'Certificate generation failed: ' + e.message });
+  }
+});
+
+// Obtain / renew Let's Encrypt certificate
+router.post('/ssl/lets-encrypt', requireAdmin, async (req, res) => {
+  try {
+    const { domain, staging } = req.body;
+    if (!domain || typeof domain !== 'string') return res.status(400).json({ error: 'domain required' });
+    const sslMod = require('../ssl');
+    // acmeChallengeTokens lives in index.js — expose via app.locals
+    const tokens = req.app.locals.acmeChallengeTokens;
+    if (!tokens) return res.status(500).json({ error: 'Challenge responder not available. Is the server running in HTTP mode?' });
+    const creds = await sslMod.obtainLE(domain, tokens, !!staging);
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('ssl_mode', 'lets_encrypt')").run();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('ssl_domain', ?)").run(domain);
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('ssl_hostname', ?)").run(domain);
+    res.json({ data: { success: true, message: `Let's Encrypt certificate obtained for ${domain}. Restart the server to enable HTTPS.` } });
+  } catch (e) {
+    console.error('[settings/ssl/lets-encrypt]', e);
+    res.status(500).json({ error: 'Let\'s Encrypt failed: ' + e.message });
+  }
+});
+
 // Test SMTP email
 router.post('/test-email', requireAdmin, async (req, res) => {
   try {
